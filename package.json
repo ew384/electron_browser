@@ -4,13 +4,15 @@
   "description": "Anti-fingerprint browser with Vue frontend and Electron backend",
   "main": "dist/electron/main/index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:electron\" \"npm run dev:vue\"",
+    "start": "node start.js",
+    "dev": "concurrently \"npm run build:electron\" \"npm run electron:dev\"",
+    "electron:dev": "electron dist/electron/main/index.js",
+    "build:electron": "tsc -p electron/tsconfig.json",
     "dev:electron": "tsc -w -p electron/tsconfig.json",
     "dev:vue": "cd server && npm run dev",
     "build": "npm run build:electron && npm run build:vue",
-    "build:electron": "tsc -p electron/tsconfig.json && electron-builder",
+    "clean": "rimraf dist data",
     "build:vue": "cd server && npm run build:prod",
-    "start": "electron .",
     "postinstall": "electron-builder install-app-deps && cd server && npm install"
   },
   "keywords": [

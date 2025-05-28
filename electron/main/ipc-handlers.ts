@@ -7,17 +7,24 @@ import { FingerprintConfig, BrowserAccount, AccountConfig } from '../shared/type
 
 const windowManager = new WindowManager();
 const accountStorage = new AccountStorage();
-
 // 账号管理
 ipcMain.handle('create-account', async (event, account: BrowserAccount) => {
+  console.log('[IPC] create-account called with:', account);
   try {
+    // 验证输入
+    if (!account) {
+      throw new Error('Account data is required');
+    }
+
     // 如果没有ID，生成一个
     if (!account.id) {
       account.id = `account_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log('[IPC] Generated account ID:', account.id);
     }
 
     // 如果没有指纹配置，自动生成
     if (!account.config?.fingerprint) {
+      console.log('[IPC] Generating fingerprint for account:', account.id);
       const fingerprint = FingerprintGenerator.generateFingerprint(account.id);
       account.config = { ...account.config, fingerprint };
     }
@@ -26,17 +33,17 @@ ipcMain.handle('create-account', async (event, account: BrowserAccount) => {
     account.status = account.status || 'idle';
     account.createdAt = account.createdAt || Date.now();
 
+    console.log('[IPC] Saving account to storage:', account.id);
     // 保存到存储
     await accountStorage.saveAccount(account);
 
-    console.log('[IPC] Account created:', account.id, account.name);
+    console.log('[IPC] Account created successfully:', account.id, account.name);
     return { success: true, account };
   } catch (error: any) {
     console.error('[IPC] Failed to create account:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error?.message || String(error) };
   }
 });
-
 ipcMain.handle('get-accounts', async () => {
   try {
     const accounts = await accountStorage.getAllAccounts();

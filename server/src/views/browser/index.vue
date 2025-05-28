@@ -1,5 +1,12 @@
 <template>
   <div class="browser-container">
+    <!-- 调试信息 -->
+    <div v-if="debugMode" class="debug-info">
+      <p>Electron API 可用: {{ isElectronAvailable ? '是' : '否' }}</p>
+      <p>浏览器数量: {{ browserList.length }}</p>
+      <p>最后更新: {{ lastUpdateTime }}</p>
+    </div>
+
     <!-- 工具栏 -->
     <div class="toolbar">
       <el-button type="primary" icon="el-icon-plus" @click="showCreateDialog">
@@ -8,6 +15,7 @@
       <el-button icon="el-icon-refresh" @click="refreshList">
         {{ $t('browser.refresh') }}
       </el-button>
+      <el-button icon="el-icon-bug" @click="toggleDebug">调试模式</el-button>
     </div>
 
     <!-- 浏览器列表 -->
@@ -106,6 +114,7 @@
       :visible.sync="fingerprintDialogVisible"
       width="800px"
     >
+      <pre v-if="currentFingerprint">{{ JSON.stringify(currentFingerprint, null, 2) }}</pre>
       <div slot="footer">
         <el-button @click="fingerprintDialogVisible = false">{{ $t('common.close') }}</el-button>
         <el-button type="primary" @click="regenerateFingerprint">
@@ -118,7 +127,6 @@
 
 <script>
 import { getGroupList } from '@/api/native'
-import electronBridge from '@/utils/electron-bridge'
 
 export default {
   name: 'BrowserList',
@@ -129,6 +137,8 @@ export default {
       groupList: [],
       dialogVisible: false,
       editMode: false,
+      debugMode: false,
+      lastUpdateTime: '',
       browserForm: {
         id: '',
         name: '',
@@ -145,34 +155,60 @@ export default {
       currentBrowserId: null
     }
   },
+  computed: {
+    isElectronAvailable() {
+      return typeof window !== 'undefined' && window.electronAPI
+    }
+  },
   created() {
     this.init()
   },
   methods: {
     async init() {
+      console.log('[BrowserList] Initializing...')
       await this.loadGroupList()
       await this.refreshList()
+    },
+
+    toggleDebug() {
+      this.debugMode = !this.debugMode
     },
 
     async loadGroupList() {
       try {
         this.groupList = await getGroupList()
+        console.log('[BrowserList] Loaded groups:', this.groupList.length)
       } catch (error) {
-        console.error('Failed to load groups:', error)
+        console.error('[BrowserList] Failed to load groups:', error)
       }
     },
 
     async refreshList() {
+      console.log('[BrowserList] Refreshing browser list...')
       this.loading = true
       try {
-        const result = await electronBridge.getAccounts()
-        if (result.success) {
-          this.browserList = result.accounts
+        if (!this.isElectronAvailable) {
+          this.$message.warning('Electron API 不可用，请在 Electron 环境中运行')
+          this.browserList = []
+          return
+        }
+
+        const result = await window.electronAPI.getAccounts()
+        console.log('[BrowserList] Get accounts result:', result)
+
+        if (result && result.success) {
+          this.browserList = result.accounts || []
+          this.lastUpdateTime = new Date().toLocaleTimeString()
+          console.log('[BrowserList] Browser list updated:', this.browserList.length)
         } else {
-          this.$message.error('获取浏览器列表失败')
+          console.error('[BrowserList] Failed to get accounts:', result?.error)
+          this.$message.error('获取浏览器列表失败: ' + (result?.error || 'Unknown error'))
+          this.browserList = []
         }
       } catch (error) {
+        console.error('[BrowserList] Exception getting browser list:', error)
         this.$message.error('获取浏览器列表失败: ' + error.message)
+        this.browserList = []
       } finally {
         this.loading = false
       }
@@ -201,22 +237,34 @@ export default {
       this.$refs.browserForm.validate(async valid => {
         if (valid) {
           try {
+            if (!this.isElectronAvailable) {
+              this.$message.error('Electron API 不可用')
+              return
+            }
+
             const account = {
               ...this.browserForm,
-              id: this.browserForm.id || Date.now().toString(),
-              status: 'stopped',
+              id:
+                this.browserForm.id ||
+                `account_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              status: 'idle',
               createdAt: this.browserForm.createdAt || Date.now()
             }
 
-            const result = await electronBridge.createAccount(account)
-            if (result.success) {
+            console.log('[BrowserList] Creating account:', account)
+            const result = await window.electronAPI.createAccount(account)
+            console.log('[BrowserList] Create account result:', result)
+
+            if (result && result.success) {
               this.$message.success(this.editMode ? '修改成功' : '创建成功')
               this.dialogVisible = false
               await this.refreshList()
             } else {
-              this.$message.error(result.error || '操作失败')
+              console.error('[BrowserList] Create account failed:', result?.error)
+              this.$message.error(result?.error || '操作失败')
             }
           } catch (error) {
+            console.error('[BrowserList] Exception creating account:', error)
             this.$message.error('操作失败: ' + error.message)
           }
         }
@@ -225,26 +273,41 @@ export default {
 
     async launchBrowser(browser) {
       try {
-        const result = await electronBridge.launchBrowser(browser.id)
-        if (result.success) {
+        if (!this.isElectronAvailable) {
+          this.$message.error('Electron API 不可用')
+          return
+        }
+
+        console.log('[BrowserList] Launching browser:', browser.id)
+        const result = await window.electronAPI.launchBrowser(browser.id)
+        console.log('[BrowserList] Launch result:', result)
+
+        if (result && result.success) {
           this.$message.success('浏览器启动成功')
           browser.status = 'running'
         } else {
-          this.$message.error('启动失败: ' + result.error)
+          console.error('[BrowserList] Launch failed:', result?.error)
+          this.$message.error('启动失败: ' + (result?.error || 'Unknown error'))
         }
       } catch (error) {
+        console.error('[BrowserList] Exception launching browser:', error)
         this.$message.error('启动失败: ' + error.message)
       }
     },
 
     async closeBrowser(browser) {
       try {
-        const result = await electronBridge.closeBrowser(browser.id)
-        if (result.success) {
+        if (!this.isElectronAvailable) {
+          this.$message.error('Electron API 不可用')
+          return
+        }
+
+        const result = await window.electronAPI.closeBrowser(browser.id)
+        if (result && result.success) {
           this.$message.success('浏览器已关闭')
-          browser.status = 'stopped'
+          browser.status = 'idle'
         } else {
-          this.$message.error('关闭失败: ' + result.error)
+          this.$message.error('关闭失败: ' + (result?.error || 'Unknown error'))
         }
       } catch (error) {
         this.$message.error('关闭失败: ' + error.message)
@@ -259,12 +322,17 @@ export default {
           type: 'warning'
         })
 
-        const result = await electronBridge.deleteAccount(browser.id)
-        if (result.success) {
+        if (!this.isElectronAvailable) {
+          this.$message.error('Electron API 不可用')
+          return
+        }
+
+        const result = await window.electronAPI.deleteAccount(browser.id)
+        if (result && result.success) {
           this.$message.success('删除成功')
           await this.refreshList()
         } else {
-          this.$message.error('删除失败: ' + result.error)
+          this.$message.error('删除失败: ' + (result?.error || 'Unknown error'))
         }
       } catch (error) {
         if (error !== 'cancel') {
@@ -287,8 +355,13 @@ export default {
 
     async regenerateFingerprint() {
       try {
-        const result = await electronBridge.generateFingerprint(this.currentBrowserId)
-        if (result.success) {
+        if (!this.isElectronAvailable) {
+          this.$message.error('Electron API 不可用')
+          return
+        }
+
+        const result = await window.electronAPI.generateFingerprint(this.currentBrowserId)
+        if (result && result.success) {
           this.currentFingerprint = result.config
           this.$message.success('指纹已重新生成')
           // 更新浏览器配置
@@ -313,5 +386,17 @@ export default {
 
 .toolbar {
   margin-bottom: 20px;
+}
+
+.debug-info {
+  background: #f5f5f5;
+  padding: 10px;
+  margin-bottom: 20px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.debug-info p {
+  margin: 5px 0;
 }
 </style>
