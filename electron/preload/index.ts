@@ -1,19 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { ensureInjected } from './fingerprint/index';
 import type { BrowserAccount, AccountConfig, FingerprintConfig } from '../shared/types';
 
-// 在DOM加载前注入指纹
+console.log('[Preload] Loading preload script...');
+
+// 暂时简化指纹注入，稍后修复
 const injectFingerprints = async () => {
   try {
     console.log('[Preload] Fingerprint injection placeholder - will be implemented later');
     // 这里暂时注释掉指纹相关代码，先确保基本功能正常
-    const result = await ipcRenderer.invoke('get-fingerprint-config');
-    if (result?.success && result.config) {
-      console.log('[Preload] Injecting fingerprints with config:', result.config);
-      ensureInjected(result.config);
-    } else {
-      console.warn('[Preload] No fingerprint config available');
-    }
+    // const result = await ipcRenderer.invoke('get-fingerprint-config');
+    // if (result?.success && result.config) {
+    //     console.log('[Preload] Injecting fingerprints with config:', result.config);
+    //     ensureInjected(result.config);
+    // } else {
+    //     console.warn('[Preload] No fingerprint config available');
+    // }
   } catch (error) {
     console.error('[Preload] Error injecting fingerprints:', error);
   }
@@ -27,6 +28,8 @@ if (typeof document !== 'undefined') {
     injectFingerprints();
   }
 }
+
+console.log('[Preload] Setting up electronAPI...');
 
 // 暴露API给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -78,3 +81,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 应用信息
   getAppVersion: () => ipcRenderer.invoke('get-app-version')
 });
+
+console.log('[Preload] electronAPI setup completed');
