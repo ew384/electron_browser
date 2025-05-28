@@ -1,0 +1,60 @@
+{
+  "name": "virtual-browser",
+  "version": "1.0.0",
+  "description": "Anti-fingerprint browser with Vue frontend and Electron backend",
+  "main": "dist/electron/main/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:electron\" \"npm run dev:vue\"",
+    "dev:electron": "tsc -w -p electron/tsconfig.json",
+    "dev:vue": "cd server && npm run dev",
+    "build": "npm run build:electron && npm run build:vue",
+    "build:electron": "tsc -p electron/tsconfig.json && electron-builder",
+    "build:vue": "cd server && npm run build:prod",
+    "start": "electron .",
+    "postinstall": "electron-builder install-app-deps && cd server && npm install"
+  },
+  "keywords": [
+    "browser",
+    "anti-fingerprint",
+    "electron",
+    "vue"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "concurrently": "^8.2.2",
+    "electron": "^27.1.0",
+    "electron-builder": "^24.9.1",
+    "eslint": "^8.57.1",
+    "prettier": "^3.5.3",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "uuid": "^9.0.1"
+  },
+  "build": {
+    "appId": "com.yourcompany.virtualbrowser",
+    "productName": "Virtual Browser",
+    "directories": {
+      "output": "dist/app"
+    },
+    "files": [
+      "dist/electron/**/*",
+      "server/dist/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
