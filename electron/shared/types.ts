@@ -12,6 +12,7 @@ export interface BrowserInstance {
   status: 'starting' | 'running' | 'stopped';
   pid?: number;
   url?: string;
+  id?: string;
 }
 
 export interface AccountConfig {
@@ -20,6 +21,7 @@ export interface AccountConfig {
   fingerprint?: FingerprintConfig;
   behavior?: BehaviorConfig;
   viewport?: ViewportConfig;
+  startUrl?: string;
 }
 
 export interface ViewportConfig {

@@ -1,45 +1,66 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const electron_1 = require("electron");
-const fingerprint_1 = require("./fingerprint");
+import { contextBridge, ipcRenderer } from 'electron';
+import { ensureInjected } from './fingerprint';
+import type { BrowserAccount, AccountConfig, FingerprintConfig } from '../shared/types';
+
 // 在DOM加载前注入指纹
 const injectFingerprints = async () => {
     try {
-        const config = await electron_1.ipcRenderer.invoke('get-fingerprint-config');
-        if (config) {
-            console.log('[Preload] Injecting fingerprints with config:', config);
-            (0, fingerprint_1.ensureInjected)(config);
-        }
-        else {
+        const result = await ipcRenderer.invoke('get-fingerprint-config');
+        if (result?.success && result.config) {
+            console.log('[Preload] Injecting fingerprints with config:', result.config);
+            ensureInjected(result.config);
+        } else {
             console.warn('[Preload] No fingerprint config available');
         }
-    }
-    catch (error) {
+    } catch (error) {
         console.error('[Preload] Error injecting fingerprints:', error);
     }
 };
+
 // 等待DOM加载
 if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', injectFingerprints);
-    }
-    else {
+    } else {
         injectFingerprints();
     }
 }
+
 // 暴露API给渲染进程
-electron_1.contextBridge.exposeInMainWorld('electronAPI', {
+contextBridge.exposeInMainWorld('electronAPI', {
     // 账号管理
-    createAccount: (account) => electron_1.ipcRenderer.invoke('create-account', account),
-    getAccounts: () => electron_1.ipcRenderer.invoke('get-accounts'),
-    deleteAccount: (accountId) => electron_1.ipcRenderer.invoke('delete-account', accountId),
-    // 浏览器实例管理
-    createBrowserInstance: (accountId, config) => electron_1.ipcRenderer.invoke('create-browser-instance', accountId, config),
-    closeBrowserInstance: (accountId) => electron_1.ipcRenderer.invoke('close-browser-instance', accountId),
-    getBrowserInstances: () => electron_1.ipcRenderer.invoke('get-browser-instances'),
+    createAccount: (account: BrowserAccount) => ipcRenderer.invoke('create-account', account),
+    getAccounts: () => ipcRenderer.invoke('get-accounts'),
+    deleteAccount: (accountId: string) => ipcRenderer.invoke('delete-account', accountId),
+
+    // 浏览器实例管理 - 统一接口名称
+    launchBrowser: (accountId: string) => {
+        console.log('[Preload] Launching browser for account:', accountId);
+        return ipcRenderer.invoke('create-browser-instance', accountId, {});
+    },
+    closeBrowser: (accountId: string) => {
+        console.log('[Preload] Closing browser for account:', accountId);
+        return ipcRenderer.invoke('close-browser-instance', accountId);
+    },
+    createBrowserInstance: (accountId: string, config: AccountConfig) =>
+        ipcRenderer.invoke('create-browser-instance', accountId, config),
+    closeBrowserInstance: (accountId: string) =>
+        ipcRenderer.invoke('close-browser-instance', accountId),
+    getBrowserInstances: () => ipcRenderer.invoke('get-browser-instances'),
+
     // 指纹管理
-    getFingerprintConfig: () => electron_1.ipcRenderer.invoke('get-fingerprint-config'),
-    updateFingerprintConfig: (config) => electron_1.ipcRenderer.invoke('update-fingerprint-config', config),
-    validateFingerprint: (config) => electron_1.ipcRenderer.invoke('validate-fingerprint', config),
-    generateFingerprint: (seed) => electron_1.ipcRenderer.invoke('generate-fingerprint', seed)
+    getFingerprintConfig: () => ipcRenderer.invoke('get-fingerprint-config'),
+    updateFingerprintConfig: (config: FingerprintConfig) =>
+        ipcRenderer.invoke('update-fingerprint-config', config),
+    validateFingerprint: (config: FingerprintConfig) =>
+        ipcRenderer.invoke('validate-fingerprint', config),
+    generateFingerprint: (seed?: string) => ipcRenderer.invoke('generate-fingerprint', seed),
+
+    // 窗口控制（如果需要）
+    minimizeWindow: () => ipcRenderer.send('minimize-window'),
+    maximizeWindow: () => ipcRenderer.send('maximize-window'),
+    closeWindow: () => ipcRenderer.send('close-window'),
+
+    // 应用信息
+    getAppVersion: () => ipcRenderer.invoke('get-app-version')
 });

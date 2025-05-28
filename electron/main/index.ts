@@ -50,9 +50,9 @@ ipcMain.handle('launch-browser', async (event, browserId) => {
     const browserWindow = await windowManager.createBrowserInstance(browserId, {
       // 从数据库或配置获取浏览器配置
     });
-    return { success: true, windowId: browserWindow.id };
+    return { success: true, windowId: browserWindow.windowId };  // 使用 windowId 而不是 id
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
 
@@ -61,7 +61,7 @@ ipcMain.handle('close-browser', async (event, browserId) => {
     await windowManager.closeInstance(browserId);
     return { success: true };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
 

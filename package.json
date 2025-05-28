@@ -34,7 +34,8 @@
   },
   "dependencies": {
     "electron-store": "^8.1.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "zustand": "^5.0.5"
   },
   "build": {
     "appId": "com.yourcompany.virtualbrowser",
