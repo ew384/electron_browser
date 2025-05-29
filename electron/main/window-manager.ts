@@ -96,6 +96,122 @@ export class WindowManager {
       WindowManager.windowFingerprintMap.set(window.id, fingerprintConfig);
       console.log(`[WindowManager] ✅ Stored fingerprint config for window ${window.id}`);
 
+      // 强化的Canvas指纹注入脚本
+      const canvasInjectionScript = `
+        (function() {
+          if (window.__CANVAS_PATCHED__) return;
+          window.__CANVAS_PATCHED__ = true;
+          
+          const accountId = '${accountId}';
+          const uniqueSeed = ${fingerprintConfig.canvas.seed || Date.now()};
+          
+          console.log('[Canvas Protection] Initializing for account:', accountId, 'seed:', uniqueSeed);
+          
+          // 保存原始方法
+          const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+          const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+          const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+          
+          // 重写toDataURL
+          HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
+            // 对于空canvas，直接返回
+            if (this.width === 0 || this.height === 0) {
+              return originalToDataURL.call(this, type, quality);
+            }
+            
+            // 创建临时canvas
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = this.width;
+            tempCanvas.height = this.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            if (!tempCtx) {
+              return originalToDataURL.call(this, type, quality);
+            }
+            
+            // 复制原始内容
+            tempCtx.drawImage(this, 0, 0);
+            
+            // 获取图像数据并添加噪声
+            try {
+              const imageData = tempCtx.getImageData(0, 0, this.width, this.height);
+              const data = imageData.data;
+              
+              // 使用账号特定的种子生成器
+              let seed = uniqueSeed + this.width * this.height;
+              function random() {
+                seed = (seed * 9301 + 49297) % 233280;
+                return seed / 233280;
+              }
+              
+              // 修改像素 - 每个账号有不同的修改模式
+              const modifyRate = 0.05 + (uniqueSeed % 100) / 1000; // 5-15%的像素
+              let modifiedCount = 0;
+              
+              for (let i = 0; i < data.length; i += 4) {
+                if (random() < modifyRate) {
+                  // 不同账号使用不同的噪声强度
+                  const noiseStrength = 3 + (uniqueSeed % 5);
+                  const offset = Math.floor(random() * noiseStrength * 2) - noiseStrength;
+                  
+                  // 修改RGB通道
+                  data[i] = Math.max(0, Math.min(255, data[i] + offset));
+                  data[i+1] = Math.max(0, Math.min(255, data[i+1] + offset));
+                  data[i+2] = Math.max(0, Math.min(255, data[i+2] + offset));
+                  modifiedCount++;
+                }
+              }
+              
+              tempCtx.putImageData(imageData, 0, 0);
+              console.log('[Canvas Protection] Modified', modifiedCount, 'pixels out of', data.length/4);
+              
+            } catch (e) {
+              console.error('[Canvas Protection] Failed to inject noise:', e);
+            }
+            
+            const result = originalToDataURL.call(tempCanvas, type, quality);
+            console.log('[Canvas Protection] Generated fingerprint for', accountId);
+            return result;
+          };
+          
+          // 重写toBlob
+          HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+            const dataURL = this.toDataURL(type, quality);
+            const arr = dataURL.split(',');
+            const mime = arr[0].match(/:(.*?);/)[1];
+            const bstr = atob(arr[1]);
+            let n = bstr.length;
+            const u8arr = new Uint8Array(n);
+            while(n--) {
+              u8arr[n] = bstr.charCodeAt(n);
+            }
+            const blob = new Blob([u8arr], {type: mime});
+            if (callback) callback(blob);
+          };
+          
+          // 测试函数
+          window.__testCanvasFingerprint = function() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 200;
+            canvas.height = 50;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillStyle = '#f60';
+            ctx.fillRect(125, 1, 62, 20);
+            ctx.fillStyle = '#069';
+            ctx.fillText('BrowserLeaks.com', 2, 15);
+            ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+            ctx.fillText('BrowserLeaks.com', 4, 17);
+            
+            return canvas.toDataURL();
+          };
+          
+          console.log('[Canvas Protection] ✅ Canvas fingerprint protection active for:', accountId);
+        })();
+      `;
+
       // 强化的配置注入 - 使用多种方式确保配置传递
       const injectConfigScript = `
         (function() {
@@ -131,11 +247,22 @@ export class WindowManager {
         window.webContents.executeJavaScript(injectConfigScript).catch(err =>
           console.error('[WindowManager] 配置注入失败:', err)
         );
+        // 同时注入Canvas保护
+        window.webContents.executeJavaScript(canvasInjectionScript).catch(err =>
+          console.error('[WindowManager] Canvas注入失败:', err)
+        );
       });
 
-      // 在页面加载前也注入一次
+      // 在页面加载前也注入一次 - 这是最关键的
       window.webContents.on('will-navigate', (event, url) => {
         console.log(`[WindowManager] WILL-NAVIGATE: 窗口 ${window.id} 导航到:`, url);
+
+        // 先注入Canvas保护
+        window.webContents.executeJavaScript(canvasInjectionScript).catch(err =>
+          console.error('[WindowManager] 导航时Canvas注入失败:', err)
+        );
+
+        // 再注入配置
         window.webContents.executeJavaScript(injectConfigScript).catch(err =>
           console.error('[WindowManager] 导航时配置注入失败:', err)
         );
@@ -160,7 +287,14 @@ export class WindowManager {
               }
             }
             
+            // 测试Canvas指纹
+            if (window.__testCanvasFingerprint) {
+              const fp = window.__testCanvasFingerprint();
+              console.log('[WindowManager-Final] Canvas指纹测试:', fp.substring(0, 50) + '...');
+            }
+            
             console.log('[WindowManager-Final] 配置状态:', !!window.__FINGERPRINT_CONFIG__);
+            console.log('[WindowManager-Final] Canvas保护:', !!window.__CANVAS_PATCHED__);
             console.log('[WindowManager-Final] 账号ID:', window.__ACCOUNT_ID__);
           })();
         `;
