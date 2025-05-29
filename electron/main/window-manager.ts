@@ -35,7 +35,7 @@ export class WindowManager {
       }
 
       // 生成完全独特的指纹配置
-      const fingerprintConfig = this.generateSimpleUniqueFingerprint(accountId);
+      const fingerprintConfig = this.generateStrongUniqueFingerprint(accountId);
       this.fingerprintConfigs.set(accountId, fingerprintConfig);
 
       console.log(`[WindowManager] ✅ Generated GUARANTEED UNIQUE fingerprint for ${accountId}:`, {
@@ -94,58 +94,79 @@ export class WindowManager {
 
       // 关键：在窗口创建后立即存储指纹配置
       WindowManager.windowFingerprintMap.set(window.id, fingerprintConfig);
-
       console.log(`[WindowManager] ✅ Stored fingerprint config for window ${window.id}`);
 
-      // 关键：在每个导航前注入配置
-      window.webContents.on('will-navigate', (event, url) => {
-        console.log(`[WindowManager] WILL-NAVIGATE: Window ${window.id} navigating to:`, url);
+      // 强化的配置注入 - 使用多种方式确保配置传递
+      const injectConfigScript = `
+        (function() {
+          console.log('[WindowManager-Inject] 🚀 强制注入配置...');
+          
+          // 方法1: 直接设置全局变量
+          window.__FINGERPRINT_CONFIG__ = ${JSON.stringify(fingerprintConfig)};
+          window.__ACCOUNT_ID__ = '${accountId}';
+          
+          // 方法2: 设置到 window 原型上
+          Object.defineProperty(window, '_FINGERPRINT_CONFIG_', {
+            value: ${JSON.stringify(fingerprintConfig)},
+            writable: false,
+            enumerable: false,
+            configurable: false
+          });
+          
+          // 方法3: 立即执行指纹注入
+          if (typeof applyFingerprintInjection === 'function') {
+            applyFingerprintInjection(${JSON.stringify(fingerprintConfig)}, '${accountId}');
+          }
+          
+          console.log('[WindowManager-Inject] ✅ 配置注入完成');
+          console.log('[WindowManager-Inject] 账号:', '${accountId}');
+          console.log('[WindowManager-Inject] 平台:', '${fingerprintConfig.navigator.platform}');
+          console.log('[WindowManager-Inject] Canvas种子:', ${fingerprintConfig.canvas.seed});
+        })();
+      `;
 
-        // 立即注入配置到页面
-        const preloadScript = `
-          (function() {
-            console.log('[WindowManager-PreLoad] 🚀 INJECTING config before page load...');
-            
-            window.__FINGERPRINT_CONFIG__ = ${JSON.stringify(fingerprintConfig)};
-            window.__ACCOUNT_ID__ = '${accountId}';
-            
-            console.log('[WindowManager-PreLoad] ✅ Config injected for:', '${accountId}');
-            console.log('[WindowManager-PreLoad] Platform:', '${fingerprintConfig.navigator.platform}');
-            console.log('[WindowManager-PreLoad] Language:', '${fingerprintConfig.navigator.language}');
-            console.log('[WindowManager-PreLoad] Canvas seed:', ${fingerprintConfig.canvas.seed});
-          })();
-        `;
-
-        window.webContents.executeJavaScript(preloadScript).catch(err =>
-          console.error('[WindowManager] Failed to inject config in will-navigate:', err)
+      // 在DOM准备前注入
+      window.webContents.once('dom-ready', () => {
+        console.log(`[WindowManager] DOM-READY: 强制注入配置到窗口 ${window.id}`);
+        window.webContents.executeJavaScript(injectConfigScript).catch(err =>
+          console.error('[WindowManager] 配置注入失败:', err)
         );
       });
 
-      // 同时在 DOM ready 时再次确保配置存在
-      window.webContents.once('dom-ready', () => {
-        console.log(`[WindowManager] DOM-READY: Ensuring config exists for window ${window.id}`);
+      // 在页面加载前也注入一次
+      window.webContents.on('will-navigate', (event, url) => {
+        console.log(`[WindowManager] WILL-NAVIGATE: 窗口 ${window.id} 导航到:`, url);
+        window.webContents.executeJavaScript(injectConfigScript).catch(err =>
+          console.error('[WindowManager] 导航时配置注入失败:', err)
+        );
+      });
 
-        const domReadyScript = `
+      // 页面完全加载后再次确保
+      window.webContents.once('did-finish-load', () => {
+        console.log(`[WindowManager] DID-FINISH-LOAD: 最终配置检查 窗口 ${window.id}`);
+
+        const finalScript = `
           (function() {
-            console.log('[WindowManager-DOM] 🔄 Checking config at DOM ready...');
+            console.log('[WindowManager-Final] 🎯 最终配置验证...');
             
             if (!window.__FINGERPRINT_CONFIG__) {
-              console.log('[WindowManager-DOM] Config missing, injecting now...');
+              console.log('[WindowManager-Final] 紧急注入配置!');
               window.__FINGERPRINT_CONFIG__ = ${JSON.stringify(fingerprintConfig)};
               window.__ACCOUNT_ID__ = '${accountId}';
-            } else {
-              console.log('[WindowManager-DOM] Config exists for:', window.__ACCOUNT_ID__);
+              
+              // 手动触发重新注入
+              if (window.electronAPI && window.electronAPI.forceReinject) {
+                window.electronAPI.forceReinject();
+              }
             }
             
-            // 强制触发 preload 脚本重新检查
-            if (window.checkForConfigUpdate) {
-              window.checkForConfigUpdate();
-            }
+            console.log('[WindowManager-Final] 配置状态:', !!window.__FINGERPRINT_CONFIG__);
+            console.log('[WindowManager-Final] 账号ID:', window.__ACCOUNT_ID__);
           })();
         `;
 
-        window.webContents.executeJavaScript(domReadyScript).catch(err =>
-          console.error('[WindowManager] Failed to inject config at DOM ready:', err)
+        window.webContents.executeJavaScript(finalScript).catch(err =>
+          console.error('[WindowManager] 最终配置注入失败:', err)
         );
       });
 
@@ -154,30 +175,6 @@ export class WindowManager {
       console.log(`[WindowManager] Loading URL for ${accountId}: ${startUrl}`);
 
       await window.loadURL(startUrl);
-
-      // 页面加载完成后再次确保配置
-      window.webContents.once('did-finish-load', () => {
-        console.log(`[WindowManager] DID-FINISH-LOAD: Final config check for window ${window.id}`);
-
-        const finalScript = `
-          (function() {
-            console.log('[WindowManager-Final] 🎯 Final config verification...');
-            console.log('[WindowManager-Final] Has config:', !!window.__FINGERPRINT_CONFIG__);
-            console.log('[WindowManager-Final] Account ID:', window.__ACCOUNT_ID__);
-            
-            if (!window.__FINGERPRINT_CONFIG__) {
-              console.log('[WindowManager-Final] EMERGENCY: Injecting config now!');
-              window.__FINGERPRINT_CONFIG__ = ${JSON.stringify(fingerprintConfig)};
-              window.__ACCOUNT_ID__ = '${accountId}';
-            }
-          })();
-        `;
-
-        window.webContents.executeJavaScript(finalScript).catch(err =>
-          console.error('[WindowManager] Failed final config injection:', err)
-        );
-      });
-
       window.show();
 
       const instance: BrowserInstance = {
@@ -207,13 +204,13 @@ export class WindowManager {
     }
   }
 
-  // 简化但保证工作的指纹生成
-  private generateSimpleUniqueFingerprint(accountId: string): FingerprintConfig {
+  // 强化的指纹生成 - 确保显著差异
+  private generateStrongUniqueFingerprint(accountId: string): FingerprintConfig {
     WindowManager.instanceCounter++;
 
-    console.log(`[WindowManager] 🎲 Generating guaranteed unique fingerprint #${WindowManager.instanceCounter} for: ${accountId}`);
+    console.log(`[WindowManager] 🎲 生成强化唯一指纹 #${WindowManager.instanceCounter} for: ${accountId}`);
 
-    // 预定义配置 - 每个实例使用不同的配置
+    // 预定义配置 - 每个实例使用完全不同的配置
     const allConfigs = [
       {
         platform: 'Win32',
@@ -261,19 +258,17 @@ export class WindowManager {
     const configIndex = (WindowManager.instanceCounter - 1) % allConfigs.length;
     const selectedConfig = allConfigs[configIndex];
 
-    // 添加一些随机性但确保正数
-    const randomFactor = Math.random();
-    const canvasNoise = 0.005 + randomFactor * 0.02; // 0.005-0.025
-    const canvasSeed = Math.floor(Date.now() + randomFactor * 1000000 + WindowManager.instanceCounter * 12345);
+    // 强化的随机性 - 基于账号ID和时间戳
+    const seedBase = accountId + Date.now() + WindowManager.instanceCounter;
+    const hash = this.simpleHash(seedBase);
+    const randomFactor = (hash % 1000) / 1000;
 
-    console.log(`[WindowManager] Using config index ${configIndex} for instance ${WindowManager.instanceCounter}`);
-    console.log(`[WindowManager] Selected config:`, {
-      platform: selectedConfig.platform,
-      language: selectedConfig.language.primary,
-      screen: `${selectedConfig.screen.width}x${selectedConfig.screen.height}`,
-      cores: selectedConfig.cores,
-      pixelRatio: selectedConfig.pixelRatio
-    });
+    // 更强的Canvas噪声
+    const canvasNoise = 0.02 + randomFactor * 0.08; // 0.02-0.10，更强噪声
+    const canvasSeed = Math.floor(hash + randomFactor * 1000000 + WindowManager.instanceCounter * 54321);
+
+    console.log(`[WindowManager] 使用配置 ${configIndex} 实例 ${WindowManager.instanceCounter}`);
+    console.log(`[WindowManager] 强化随机种子:`, hash, '噪声:', canvasNoise);
 
     const uniqueConfig: FingerprintConfig = {
       canvas: {
@@ -288,8 +283,8 @@ export class WindowManager {
         language: selectedConfig.language.primary,
         languages: [...selectedConfig.language.list],
         hardwareConcurrency: selectedConfig.cores,
-        maxTouchPoints: selectedConfig.platform.includes('Win') ? 0 : Math.floor(Math.random() * 3),
-        deviceMemory: [4, 8, 16, 32][Math.floor(Math.random() * 4)]
+        maxTouchPoints: selectedConfig.platform.includes('Win') ? 0 : Math.floor(randomFactor * 5),
+        deviceMemory: [4, 8, 16, 32][Math.floor(randomFactor * 4)]
       },
       webgl: {
         enabled: true,
@@ -307,7 +302,7 @@ export class WindowManager {
       },
       audio: {
         enabled: true,
-        noise: 0.01 + Math.random() * 0.05,
+        noise: 0.02 + randomFactor * 0.08,
         seed: canvasSeed
       },
       fonts: {
@@ -322,7 +317,7 @@ export class WindowManager {
       }
     };
 
-    console.log(`[WindowManager] ✅ Generated GUARANTEED UNIQUE config for ${accountId}:`, {
+    console.log(`[WindowManager] ✅ 生成强化唯一配置 ${accountId}:`, {
       instance: WindowManager.instanceCounter,
       platform: uniqueConfig.navigator.platform,
       language: uniqueConfig.navigator.language,
@@ -334,6 +329,16 @@ export class WindowManager {
     });
 
     return uniqueConfig;
+  }
+
+  private simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
   }
 
   private generateUserAgent(fingerprint: FingerprintConfig): string {
