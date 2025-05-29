@@ -1,0 +1,20 @@
+{
+    "name": "browser-fingerprint-electron",
+    "version": "1.0.0",
+    "description": "防关联浏览器 Electron 后端",
+    "main": "../dist/electron/main/index.js",
+    "scripts": {
+        "build": "tsc",
+        "build:watch": "tsc --watch",
+        "dev": "tsc --watch",
+        "clean": "rimraf ../dist/electron"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.0.0",
+        "rimraf": "^5.0.0"
+    },
+    "dependencies": {
+        "electron": "^28.0.0"
+    }
+}

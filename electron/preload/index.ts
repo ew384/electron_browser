@@ -1,250 +1,373 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { BrowserAccount, AccountConfig, FingerprintConfig } from '../shared/types';
 
-console.log('[Preload] Loading preload script...');
+console.log('[Preload] 🚀 Auto-injection preload starting...');
 
-// 指纹注入功能 - 延迟加载
-let fingerprintModule: any = null;
-
-const loadFingerprintModule = async () => {
-  if (!fingerprintModule) {
-    try {
-      // 动态导入指纹模块，避免构建时的依赖问题
-      fingerprintModule = await import('./fingerprint');
-      console.log('[Preload] Fingerprint module loaded successfully');
-    } catch (error) {
-      console.warn('[Preload] Failed to load fingerprint module:', error);
-      // 创建空的指纹模块作为后备
-      fingerprintModule = {
-        injectAllFingerprints: () => console.log('[Preload] Fingerprint injection disabled'),
-        ensureInjected: () => console.log('[Preload] Fingerprint injection disabled')
-      };
-    }
+// 声明全局类型
+declare global {
+  interface Window {
+    __FINGERPRINT_CONFIG__?: any;
+    __ACCOUNT_ID__?: string;
   }
-  return fingerprintModule;
-};
+}
 
-// 指纹注入功能
-const injectFingerprints = async () => {
+// 自动应用指纹注入的函数
+function autoApplyFingerprint() {
+  let attempts = 0;
+  const maxAttempts = 50;
+
+  const tryApply = () => {
+    attempts++;
+    console.log(`[Preload] Auto-apply attempt ${attempts}...`);
+
+    const config = window.__FINGERPRINT_CONFIG__;
+    const accountId = window.__ACCOUNT_ID__;
+
+    if (config && accountId) {
+      console.log('[Preload] ✅ Config found! Auto-applying fingerprint...');
+      console.log(`[Preload] Account: ${accountId}, Platform: ${config.navigator.platform}`);
+
+      // 应用手动注入的相同逻辑
+      applyFingerprintInjection(config, accountId);
+
+    } else if (attempts < maxAttempts) {
+      console.log('[Preload] Config not ready, retrying in 100ms...');
+      setTimeout(tryApply, 100);
+    } else {
+      console.log('[Preload] ⚠️ Timeout waiting for config, using emergency injection');
+      applyEmergencyInjection();
+    }
+  };
+
+  tryApply();
+}
+
+// 应用指纹注入的核心函数
+function applyFingerprintInjection(config: any, accountId: string) {
+  console.log(`[Preload] 🎯 Auto-applying fingerprint for: ${accountId}`);
+
   try {
-    console.log('[Preload] Starting fingerprint injection...');
+    // Navigator 注入
+    if (config.navigator?.enabled) {
+      console.log('[Preload-Nav] 🧭 Overriding Navigator properties...');
 
-    // 获取指纹配置
-    const result = await ipcRenderer.invoke('get-fingerprint-config');
+      Object.defineProperty(navigator, 'platform', {
+        get: function () {
+          console.log('[Nav] 🎯 platform accessed, returning:', config.navigator.platform);
+          return config.navigator.platform;
+        },
+        configurable: true,
+        enumerable: true
+      });
 
-    if (result?.success && result.config) {
-      console.log('[Preload] Got fingerprint config, injecting...');
+      Object.defineProperty(navigator, 'language', {
+        get: function () {
+          console.log('[Nav] 🎯 language accessed, returning:', config.navigator.language);
+          return config.navigator.language;
+        },
+        configurable: true,
+        enumerable: true
+      });
 
-      // 动态加载指纹模块
-      const fingerprint = await loadFingerprintModule();
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        get: function () {
+          console.log('[Nav] 🎯 hardwareConcurrency accessed, returning:', config.navigator.hardwareConcurrency);
+          return config.navigator.hardwareConcurrency;
+        },
+        configurable: true,
+        enumerable: true
+      });
 
-      // 注入指纹
-      fingerprint.ensureInjected(result.config);
+      Object.defineProperty(navigator, 'languages', {
+        get: function () {
+          console.log('[Nav] 🎯 languages accessed, returning:', config.navigator.languages);
+          return config.navigator.languages;
+        },
+        configurable: true,
+        enumerable: true
+      });
 
-      console.log('[Preload] Fingerprint injection completed');
-    } else {
-      console.log('[Preload] No fingerprint config available, skipping injection');
+      if (config.navigator.deviceMemory) {
+        Object.defineProperty(navigator, 'deviceMemory', {
+          get: function () {
+            console.log('[Nav] 🎯 deviceMemory accessed, returning:', config.navigator.deviceMemory);
+            return config.navigator.deviceMemory;
+          },
+          configurable: true,
+          enumerable: true
+        });
+      }
+
+      console.log('[Preload-Nav] ✅ Navigator properties overridden');
     }
+
+    // Screen 注入
+    if (config.screen?.enabled) {
+      console.log('[Preload-Screen] 📺 Overriding Screen properties...');
+
+      Object.defineProperty(screen, 'width', {
+        get: function () {
+          console.log('[Screen] 🎯 width accessed, returning:', config.screen.width);
+          return config.screen.width;
+        },
+        configurable: true,
+        enumerable: true
+      });
+
+      Object.defineProperty(screen, 'height', {
+        get: function () {
+          console.log('[Screen] 🎯 height accessed, returning:', config.screen.height);
+          return config.screen.height;
+        },
+        configurable: true,
+        enumerable: true
+      });
+
+      Object.defineProperty(screen, 'availWidth', {
+        get: function () {
+          return config.screen.width;
+        },
+        configurable: true,
+        enumerable: true
+      });
+
+      Object.defineProperty(screen, 'availHeight', {
+        get: function () {
+          return config.screen.height - 40;
+        },
+        configurable: true,
+        enumerable: true
+      });
+
+      Object.defineProperty(window, 'devicePixelRatio', {
+        get: function () {
+          console.log('[Screen] 🎯 devicePixelRatio accessed, returning:', config.screen.pixelRatio);
+          return config.screen.pixelRatio;
+        },
+        configurable: true,
+        enumerable: true
+      });
+
+      console.log('[Preload-Screen] ✅ Screen properties overridden');
+    }
+
+    // Canvas 注入
+    if (config.canvas?.enabled) {
+      console.log('[Preload-Canvas] 🎨 Overriding Canvas methods...');
+
+      const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+
+      HTMLCanvasElement.prototype.toDataURL = function (type?: string, quality?: any): string {
+        console.log('[Canvas] 🎯 toDataURL intercepted for:', accountId);
+
+        const original = originalToDataURL.call(this, type, quality);
+        const seed = config.canvas.seed;
+        const noise = seed.toString(36) + Math.random().toString(36).slice(2);
+
+        const result = original + '?seed=' + noise + '&acc=' + accountId.substring(0, 8);
+
+        console.log('[Canvas] ✅ Fingerprint applied, length:', result.length);
+        return result;
+      };
+
+      // 同时处理 toBlob
+      const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+      HTMLCanvasElement.prototype.toBlob = function (callback: BlobCallback, type?: string, quality?: any): void {
+        console.log('[Canvas] 🎯 toBlob intercepted for:', accountId);
+
+        // 使用修改后的 toDataURL
+        const dataURL = this.toDataURL(type, quality);
+
+        // 转换为 Blob
+        const parts = dataURL.split(',');
+        const contentType = parts[0].split(':')[1].split(';')[0];
+        const byteString = atob(parts[1]);
+
+        const arrayBuffer = new ArrayBuffer(byteString.length);
+        const uint8Array = new Uint8Array(arrayBuffer);
+
+        for (let i = 0; i < byteString.length; i++) {
+          uint8Array[i] = byteString.charCodeAt(i);
+        }
+
+        const blob = new Blob([arrayBuffer], { type: contentType });
+        callback(blob);
+      };
+
+      console.log('[Preload-Canvas] ✅ Canvas methods overridden');
+    }
+
+    // WebGL 注入
+    if (config.webgl?.enabled) {
+      console.log('[Preload-WebGL] 🎮 Overriding WebGL...');
+
+      if (window.WebGLRenderingContext) {
+        const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function (parameter: GLenum): any {
+          switch (parameter) {
+            case this.VENDOR:
+              console.log('[WebGL] 🎯 VENDOR accessed, returning:', config.webgl.vendor);
+              return config.webgl.vendor;
+            case this.RENDERER:
+              console.log('[WebGL] 🎯 RENDERER accessed, returning:', config.webgl.renderer);
+              return config.webgl.renderer;
+            default:
+              return originalGetParameter.call(this, parameter);
+          }
+        };
+      }
+
+      if (window.WebGL2RenderingContext) {
+        const originalGetParameter2 = WebGL2RenderingContext.prototype.getParameter;
+        WebGL2RenderingContext.prototype.getParameter = function (parameter: GLenum): any {
+          switch (parameter) {
+            case this.VENDOR:
+              return config.webgl.vendor;
+            case this.RENDERER:
+              return config.webgl.renderer;
+            default:
+              return originalGetParameter2.call(this, parameter);
+          }
+        };
+      }
+
+      console.log('[Preload-WebGL] ✅ WebGL overridden');
+    }
+
+    console.log(`[Preload] ✅ Auto-injection completed for: ${accountId}`);
+
+    // 立即验证
+    setTimeout(() => {
+      console.log(`[Preload] 🧪 Auto-verification for ${accountId}:`);
+      console.log('[Verify] Platform:', navigator.platform);
+      console.log('[Verify] Language:', navigator.language);
+      console.log('[Verify] Screen:', screen.width + 'x' + screen.height);
+    }, 100);
+
   } catch (error) {
-    console.warn('[Preload] Fingerprint injection failed:', error);
-    // 指纹注入失败不应该影响基本功能
+    console.error(`[Preload] ❌ Auto-injection failed for ${accountId}:`, error);
   }
-};
+}
 
-// DOM 加载后执行指纹注入
-const setupFingerprintInjection = () => {
-  if (typeof document !== 'undefined') {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', injectFingerprints);
-    } else {
-      // 延迟执行，确保页面完全加载
-      setTimeout(injectFingerprints, 100);
+// 紧急注入（如果配置未找到）
+function applyEmergencyInjection() {
+  console.log('[Preload] 🚨 Applying emergency injection...');
+
+  const emergencyConfig = {
+    navigator: {
+      enabled: true,
+      platform: 'Win32',
+      language: 'en-US',
+      languages: ['en-US', 'en'],
+      hardwareConcurrency: 8,
+      deviceMemory: 8
+    },
+    screen: {
+      enabled: true,
+      width: 1920,
+      height: 1080,
+      pixelRatio: 1
+    },
+    canvas: {
+      enabled: true,
+      seed: Date.now()
     }
-  }
-};
+  };
 
-console.log('[Preload] Setting up electronAPI...');
+  applyFingerprintInjection(emergencyConfig, 'emergency-' + Date.now());
+}
 
-// 创建安全的 API 接口
+// 立即开始自动注入
+console.log('[Preload] Starting auto-injection process...');
+autoApplyFingerprint();
+
+// ElectronAPI
 const electronAPI = {
-  // 账号管理
-  createAccount: async (account: BrowserAccount) => {
-    console.log('[Preload] Creating account:', account);
-    try {
-      return await ipcRenderer.invoke('create-account', account);
-    } catch (error) {
-      console.error('[Preload] Create account error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
+  // 基本账号管理
   getAccounts: async () => {
-    console.log('[Preload] Getting accounts');
     try {
       return await ipcRenderer.invoke('get-accounts');
     } catch (error) {
-      console.error('[Preload] Get accounts error:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error), accounts: [] };
     }
   },
 
-  deleteAccount: async (accountId: string) => {
-    console.log('[Preload] Deleting account:', accountId);
+  createAccount: async (account: any) => {
     try {
-      return await ipcRenderer.invoke('delete-account', accountId);
+      return await ipcRenderer.invoke('create-account', account);
     } catch (error) {
-      console.error('[Preload] Delete account error:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
 
-  // 浏览器实例管理
   launchBrowser: async (accountId: string) => {
-    console.log('[Preload] Launching browser for account:', accountId);
     try {
       return await ipcRenderer.invoke('create-browser-instance', accountId, {});
     } catch (error) {
-      console.error('[Preload] Launch browser error:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
 
-  closeBrowser: async (accountId: string) => {
-    console.log('[Preload] Closing browser for account:', accountId);
-    try {
-      return await ipcRenderer.invoke('close-browser-instance', accountId);
-    } catch (error) {
-      console.error('[Preload] Close browser error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
+  // 调试和测试方法
+  getWindowConfig: () => {
+    return {
+      fingerprintConfig: window.__FINGERPRINT_CONFIG__,
+      accountId: window.__ACCOUNT_ID__,
+      hasConfig: !!window.__FINGERPRINT_CONFIG__,
+      configKeys: window.__FINGERPRINT_CONFIG__ ? Object.keys(window.__FINGERPRINT_CONFIG__) : []
+    };
   },
 
-  createBrowserInstance: async (accountId: string, config: AccountConfig) => {
-    try {
-      return await ipcRenderer.invoke('create-browser-instance', accountId, config);
-    } catch (error) {
-      console.error('[Preload] Create browser instance error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+  testFingerprints: () => {
+    const accountId = window.__ACCOUNT_ID__ || 'unknown';
+    console.log(`[Test] === AUTO-INJECTED FINGERPRINT TEST FOR ${accountId} ===`);
+
+    console.log('[Test] Navigator platform:', navigator.platform);
+    console.log('[Test] Navigator language:', navigator.language);
+    console.log('[Test] Navigator cores:', navigator.hardwareConcurrency);
+    console.log('[Test] Screen size:', screen.width + 'x' + screen.height);
+    console.log('[Test] Device pixel ratio:', window.devicePixelRatio);
+
+    // Canvas 测试
+    const canvas = document.createElement('canvas');
+    canvas.width = 200;
+    canvas.height = 50;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.textBaseline = 'top';
+      ctx.font = '14px Arial';
+      ctx.fillStyle = '#f60';
+      ctx.fillRect(125, 1, 62, 20);
+      ctx.fillStyle = '#069';
+      ctx.fillText('BrowserLeaks Test', 2, 15);
+
+      const result1 = canvas.toDataURL();
+      const result2 = canvas.toDataURL();
+
+      console.log('[Test] Canvas result 1 length:', result1.length);
+      console.log('[Test] Canvas result 2 length:', result2.length);
+      console.log('[Test] Canvas different:', result1 !== result2);
     }
+
+    return {
+      accountId,
+      platform: navigator.platform,
+      language: navigator.language,
+      cores: navigator.hardwareConcurrency,
+      screenSize: screen.width + 'x' + screen.height
+    };
   },
 
-  closeBrowserInstance: async (accountId: string) => {
-    try {
-      return await ipcRenderer.invoke('close-browser-instance', accountId);
-    } catch (error) {
-      console.error('[Preload] Close browser instance error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
-  getBrowserInstances: async () => {
-    try {
-      return await ipcRenderer.invoke('get-browser-instances');
-    } catch (error) {
-      console.error('[Preload] Get browser instances error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error), instances: [] };
-    }
-  },
-
-  // 指纹管理
-  getFingerprintConfig: async () => {
-    try {
-      return await ipcRenderer.invoke('get-fingerprint-config');
-    } catch (error) {
-      console.error('[Preload] Get fingerprint config error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
-  updateFingerprintConfig: async (config: FingerprintConfig) => {
-    try {
-      return await ipcRenderer.invoke('update-fingerprint-config', config);
-    } catch (error) {
-      console.error('[Preload] Update fingerprint config error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
-  validateFingerprint: async (config: FingerprintConfig) => {
-    try {
-      return await ipcRenderer.invoke('validate-fingerprint', config);
-    } catch (error) {
-      console.error('[Preload] Validate fingerprint error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
-  generateFingerprint: async (seed?: string) => {
-    console.log('[Preload] Generating fingerprint with seed:', seed);
-    try {
-      return await ipcRenderer.invoke('generate-fingerprint', seed);
-    } catch (error) {
-      console.error('[Preload] Generate fingerprint error:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
-  // 窗口控制
-  minimizeWindow: () => {
-    try {
-      ipcRenderer.send('minimize-window');
-    } catch (error) {
-      console.error('[Preload] Minimize window error:', error);
-    }
-  },
-
-  maximizeWindow: () => {
-    try {
-      ipcRenderer.send('maximize-window');
-    } catch (error) {
-      console.error('[Preload] Maximize window error:', error);
-    }
-  },
-
-  closeWindow: () => {
-    try {
-      ipcRenderer.send('close-window');
-    } catch (error) {
-      console.error('[Preload] Close window error:', error);
-    }
-  },
-
-  // 应用信息
-  getAppVersion: async () => {
-    try {
-      return await ipcRenderer.invoke('get-app-version');
-    } catch (error) {
-      console.error('[Preload] Get app version error:', error);
-      return '1.0.0';
-    }
-  },
-
-  // 指纹注入控制（用于调试）
-  injectFingerprints: async () => {
-    await injectFingerprints();
+  forceReinject: () => {
+    console.log('[Debug] Force re-applying auto-injection...');
+    autoApplyFingerprint();
   }
 };
 
-// 暴露 API 给渲染进程
 try {
   contextBridge.exposeInMainWorld('electronAPI', electronAPI);
-  console.log('[Preload] electronAPI setup completed');
+  console.log('[Preload] ✅ ElectronAPI exposed successfully');
 } catch (error) {
-  console.error('[Preload] Failed to expose electronAPI:', error);
+  console.error('[Preload] ❌ Failed to expose ElectronAPI:', error);
 }
 
-// 设置指纹注入（可选）
-setupFingerprintInjection();
-
-// 监听指纹配置更新
-ipcRenderer.on('fingerprint-config-updated', async (event, config) => {
-  console.log('[Preload] Fingerprint config updated, re-injecting...');
-  try {
-    const fingerprint = await loadFingerprintModule();
-    fingerprint.injectAllFingerprints(config);
-  } catch (error) {
-    console.warn('[Preload] Failed to re-inject fingerprints:', error);
-  }
-});
-
-console.log('[Preload] Preload script loaded successfully');
+console.log('[Preload] 🎉 Auto-injection preload script loaded!');
