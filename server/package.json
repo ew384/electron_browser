@@ -2,7 +2,7 @@
   "name": "virtual-browser-control",
   "version": "0.1.0",
   "description": "A magical vue admin. An out-of-box UI solution for enterprise applications. Newest development stack of vue. Lots of awesome features",
-  "author": "Pan <panfree23@gmail.com>",
+  "author": "author",
   "scripts": {
     "dev": "vue-cli-service serve",
     "lint": "eslint --ext .js,.vue src",
@@ -21,6 +21,7 @@
     "file-saver": "^2.0.5",
     "fuse.js": "3.4.4",
     "js-cookie": "^3.0.1",
+    "lodash": "^4.17.21",
     "normalize.css": "7.0.0",
     "nprogress": "^0.2.0",
     "path-to-regexp": "^6.2.1",

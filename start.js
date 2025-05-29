@@ -6,6 +6,10 @@ const fs = require('fs');
 
 console.log('🚀 启动防关联浏览器应用...');
 
+// 存储子进程引用
+let electronProcess = null;
+let serverProcess = null;
+
 // 检查必要的目录和文件
 function checkEnvironment() {
     const requiredDirs = [
@@ -72,11 +76,28 @@ function buildElectron() {
     });
 }
 
+// 清理函数，确保所有进程都被终止
+function cleanup() {
+    console.log('🧹 清理进程...');
+
+    if (electronProcess) {
+        console.log('🛑 终止 Electron 进程...');
+        electronProcess.kill('SIGTERM');
+        electronProcess = null;
+    }
+
+    if (serverProcess) {
+        console.log('🛑 终止服务器进程...');
+        serverProcess.kill('SIGTERM');
+        serverProcess = null;
+    }
+}
+
 // 启动应用
 function startApp() {
     console.log('🎯 启动应用...');
 
-    const electron = spawn('npm', ['run', 'electron:dev'], {
+    electronProcess = spawn('npm', ['run', 'electron:dev'], {
         stdio: 'inherit',
         shell: true,
         env: {
@@ -85,26 +106,28 @@ function startApp() {
         }
     });
 
-    electron.on('close', (code) => {
+    electronProcess.on('close', (code) => {
         console.log(`应用退出，代码: ${code}`);
+        cleanup();
         process.exit(code);
     });
 
-    electron.on('error', (error) => {
+    electronProcess.on('error', (error) => {
         console.error('启动失败:', error);
+        cleanup();
         process.exit(1);
     });
 
     // 处理退出信号
-    process.on('SIGINT', () => {
-        console.log('\n🛑 收到退出信号，正在关闭应用...');
-        electron.kill('SIGTERM');
-    });
+    const handleExit = (signal) => {
+        console.log(`\n🛑 收到 ${signal} 信号，正在关闭应用...`);
+        cleanup();
+        process.exit(0);
+    };
 
-    process.on('SIGTERM', () => {
-        console.log('\n🛑 收到终止信号，正在关闭应用...');
-        electron.kill('SIGTERM');
-    });
+    process.on('SIGINT', () => handleExit('SIGINT'));
+    process.on('SIGTERM', () => handleExit('SIGTERM'));
+    process.on('exit', () => cleanup());
 }
 
 // 主函数
@@ -121,6 +144,7 @@ async function main() {
 
     } catch (error) {
         console.error('❌ 启动失败:', error);
+        cleanup();
         process.exit(1);
     }
 }

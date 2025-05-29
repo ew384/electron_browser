@@ -1,41 +1,61 @@
-import { injectCanvasFingerprinting, testCanvasInjection } from './canvas';
-import { FingerprintConfig } from '../../shared/types';
+import type { FingerprintConfig } from '../../shared/types';
 
-export function injectAllFingerprints(config: FingerprintConfig) {
+// 导入具体的指纹注入模块
+let canvasModule: any = null;
+
+// 延迟加载 Canvas 模块
+const loadCanvasModule = async () => {
+  if (!canvasModule) {
+    try {
+      canvasModule = await import('./canvas');
+      console.log('[Fingerprint] Canvas module loaded');
+    } catch (error) {
+      console.warn('[Fingerprint] Failed to load canvas module:', error);
+      canvasModule = {
+        injectCanvasFingerprinting: () => console.log('[Fingerprint] Canvas injection disabled'),
+        testCanvasInjection: () => console.log('[Fingerprint] Canvas testing disabled')
+      };
+    }
+  }
+  return canvasModule;
+};
+
+export async function injectAllFingerprints(config: FingerprintConfig) {
   console.log('[Fingerprint] 🚀 开始指纹注入流程');
   console.log('[Fingerprint] 配置摘要:', {
-    canvas: config.canvas.enabled,
-    webgl: config.webgl.enabled,
-    navigator: config.navigator.enabled,
-    screen: config.screen.enabled
+    canvas: config.canvas?.enabled,
+    webgl: config.webgl?.enabled,
+    navigator: config.navigator?.enabled,
+    screen: config.screen?.enabled
   });
 
   try {
     // Canvas 指纹注入 - 优先级最高
-    if (config.canvas.enabled) {
+    if (config.canvas?.enabled) {
       console.log('[Fingerprint] === Canvas 指纹注入 ===');
-      injectCanvasFingerprinting(config.canvas);
-      
+      const canvas = await loadCanvasModule();
+      canvas.injectCanvasFingerprinting(config.canvas);
+
       // 延迟测试效果
       setTimeout(() => {
-        testCanvasInjection();
+        canvas.testCanvasInjection();
       }, 300);
     }
 
     // Navigator 指纹注入
-    if (config.navigator.enabled) {
+    if (config.navigator?.enabled) {
       console.log('[Fingerprint] === Navigator 指纹注入 ===');
       injectNavigatorFingerprinting(config.navigator);
     }
 
     // WebGL 指纹注入
-    if (config.webgl.enabled) {
+    if (config.webgl?.enabled) {
       console.log('[Fingerprint] === WebGL 指纹注入 ===');
       injectWebGLFingerprinting(config.webgl);
     }
 
     // Screen 指纹注入
-    if (config.screen.enabled) {
+    if (config.screen?.enabled) {
       console.log('[Fingerprint] === Screen 指纹注入 ===');
       injectScreenFingerprinting(config.screen);
     }
@@ -92,28 +112,30 @@ function injectWebGLFingerprinting(config: any) {
 
   try {
     // WebGL 1.0 注入
-    const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
-    WebGLRenderingContext.prototype.getParameter = function(parameter: GLenum): any {
-      switch (parameter) {
-        case this.VENDOR:
-          console.log('[WebGL] 返回伪装厂商:', config.vendor);
-          return config.vendor;
-        case this.RENDERER:
-          console.log('[WebGL] 返回伪装渲染器:', config.renderer);
-          return config.renderer;
-        case this.VERSION:
-          return 'WebGL 1.0 (OpenGL ES 2.0 Chromium)';
-        case this.SHADING_LANGUAGE_VERSION:
-          return 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)';
-        default:
-          return originalGetParameter.call(this, parameter);
-      }
-    };
+    if (window.WebGLRenderingContext) {
+      const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function (parameter: GLenum): any {
+        switch (parameter) {
+          case this.VENDOR:
+            console.log('[WebGL] 返回伪装厂商:', config.vendor);
+            return config.vendor;
+          case this.RENDERER:
+            console.log('[WebGL] 返回伪装渲染器:', config.renderer);
+            return config.renderer;
+          case this.VERSION:
+            return 'WebGL 1.0 (OpenGL ES 2.0 Chromium)';
+          case this.SHADING_LANGUAGE_VERSION:
+            return 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)';
+          default:
+            return originalGetParameter.call(this, parameter);
+        }
+      };
+    }
 
     // WebGL 2.0 注入
     if (window.WebGL2RenderingContext) {
       const originalGetParameter2 = WebGL2RenderingContext.prototype.getParameter;
-      WebGL2RenderingContext.prototype.getParameter = function(parameter: GLenum): any {
+      WebGL2RenderingContext.prototype.getParameter = function (parameter: GLenum): any {
         switch (parameter) {
           case this.VENDOR:
             return config.vendor;
@@ -158,7 +180,7 @@ function injectScreenFingerprinting(config: any) {
 
     Object.defineProperty(window, 'devicePixelRatio', {
       get: () => config.pixelRatio,
-      set: () => {},
+      set: () => { },
       enumerable: true,
       configurable: true
     });
@@ -183,5 +205,15 @@ export function ensureInjected(config: FingerprintConfig) {
     injected = true;
   } else {
     console.log('[Fingerprint] ⏭️  指纹已注入，跳过重复注入');
+  }
+}
+
+// 导出测试函数
+export async function testFingerprint() {
+  try {
+    const canvas = await loadCanvasModule();
+    canvas.testCanvasInjection();
+  } catch (error) {
+    console.error('[Fingerprint] Test failed:', error);
   }
 }
