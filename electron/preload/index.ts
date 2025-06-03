@@ -389,32 +389,145 @@ function testCanvasEffect(accountId: string) {
 console.log('[Preload] Starting auto-injection process...');
 autoApplyFingerprint();
 
-// ElectronAPI
+// 🔧 修复：完整的 ElectronAPI，包括 closeBrowser 方法
 const electronAPI = {
+  // 账号管理
   getAccounts: async () => {
+    console.log('[Preload] getAccounts called');
     try {
       return await ipcRenderer.invoke('get-accounts');
     } catch (error) {
+      console.error('[Preload] getAccounts failed:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error), accounts: [] };
     }
   },
 
   createAccount: async (account: any) => {
+    console.log('[Preload] createAccount called with:', account);
     try {
       return await ipcRenderer.invoke('create-account', account);
     } catch (error) {
+      console.error('[Preload] createAccount failed:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
 
-  launchBrowser: async (accountId: string) => {
+  deleteAccount: async (accountId: string) => {
+    console.log('[Preload] deleteAccount called with:', accountId);
     try {
-      return await ipcRenderer.invoke('create-browser-instance', accountId, {});
+      return await ipcRenderer.invoke('delete-account', accountId);
     } catch (error) {
+      console.error('[Preload] deleteAccount failed:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
 
+  // 浏览器实例管理
+  launchBrowser: async (accountId: string, config = {}) => {
+    console.log('[Preload] launchBrowser called with:', accountId, config);
+    try {
+      return await ipcRenderer.invoke('create-browser-instance', accountId, config);
+    } catch (error) {
+      console.error('[Preload] launchBrowser failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  // 🎯 关键修复：添加 closeBrowser 方法
+  closeBrowser: async (accountId: string) => {
+    console.log('[Preload] ✅ closeBrowser called with:', accountId);
+    try {
+      return await ipcRenderer.invoke('close-browser-instance', accountId);
+    } catch (error) {
+      console.error('[Preload] closeBrowser failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  getBrowserInstances: async () => {
+    console.log('[Preload] getBrowserInstances called');
+    try {
+      return await ipcRenderer.invoke('get-browser-instances');
+    } catch (error) {
+      console.error('[Preload] getBrowserInstances failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error), instances: [] };
+    }
+  },
+
+  // 指纹管理
+  getFingerprintConfig: async () => {
+    console.log('[Preload] getFingerprintConfig called');
+    try {
+      return await ipcRenderer.invoke('get-fingerprint-config');
+    } catch (error) {
+      console.error('[Preload] getFingerprintConfig failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  generateFingerprint: async (seed?: string) => {
+    console.log('[Preload] generateFingerprint called with seed:', seed);
+    try {
+      return await ipcRenderer.invoke('generate-fingerprint', seed);
+    } catch (error) {
+      console.error('[Preload] generateFingerprint failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  updateFingerprintConfig: async (config: any) => {
+    console.log('[Preload] updateFingerprintConfig called');
+    try {
+      return await ipcRenderer.invoke('update-fingerprint-config', config);
+    } catch (error) {
+      console.error('[Preload] updateFingerprintConfig failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  validateFingerprint: async (config: any) => {
+    console.log('[Preload] validateFingerprint called');
+    try {
+      return await ipcRenderer.invoke('validate-fingerprint', config);
+    } catch (error) {
+      console.error('[Preload] validateFingerprint failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  // 应用信息
+  getAppVersion: async () => {
+    console.log('[Preload] getAppVersion called');
+    try {
+      return await ipcRenderer.invoke('get-app-version');
+    } catch (error) {
+      console.error('[Preload] getAppVersion failed:', error);
+      return '1.0.0';
+    }
+  },
+
+  // 调试方法
+  debugFingerprintStatus: async () => {
+    console.log('[Preload] debugFingerprintStatus called');
+    try {
+      return await ipcRenderer.invoke('debug-fingerprint-status');
+    } catch (error) {
+      console.error('[Preload] debugFingerprintStatus failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  debugWindowInfo: async () => {
+    console.log('[Preload] debugWindowInfo called');
+    try {
+      return await ipcRenderer.invoke('debug-window-info');
+    } catch (error) {
+      console.error('[Preload] debugWindowInfo failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  // 本地测试方法
   getWindowConfig: () => {
     return {
       fingerprintConfig: window.__FINGERPRINT_CONFIG__,
@@ -445,11 +558,16 @@ const electronAPI = {
   }
 };
 
+// 暴露 API 到主世界
 try {
   contextBridge.exposeInMainWorld('electronAPI', electronAPI);
   console.log('[Preload] ✅ ElectronAPI exposed successfully');
+  console.log('[Preload] Available methods:', Object.keys(electronAPI));
 } catch (error) {
   console.error('[Preload] ❌ Failed to expose ElectronAPI:', error);
+  // 如果 contextBridge 失败，直接挂载到 window（仅开发环境）
+  (window as any).electronAPI = electronAPI;
+  console.log('[Preload] ⚠️ Fallback: ElectronAPI attached to window');
 }
 
 console.log('[Preload] 🎉 FINAL Canvas Fix preload loaded!');

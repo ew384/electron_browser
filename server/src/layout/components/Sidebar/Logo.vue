@@ -24,8 +24,8 @@ export default {
   },
   data() {
     return {
-      title: 'Virtual Browser',
-      logo: require('@/assets/img/64.png')
+      title: 'Browser Agent',
+      logo: require('@/assets/img/Mobius.png')
     }
   }
 }
@@ -46,7 +46,7 @@ export default {
   width: 100%;
   height: 50px;
   line-height: 50px;
-  background: #2b2f3a;
+  background: #5e31d8; // 透明背景
   text-align: center;
   overflow: hidden;
 
@@ -77,6 +77,11 @@ export default {
     .sidebar-logo {
       margin-right: 0px;
     }
+  }
+
+  // 悬停效果
+  &:hover {
+    background: #5e31d8;
   }
 }
 </style>

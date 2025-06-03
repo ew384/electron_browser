@@ -3,16 +3,16 @@
 * So I modified the default color and you can modify it to your liking.
 **/
 
-/* theme color */
-$--color-primary: #2ea000; //#1890ff;
-$--color-success: #13ce66;
-$--color-warning: #ffba00;
-$--color-danger: #ff4949;
-// $--color-info: #1E1E1E;
+/* theme color - 以#212224为主的协调配色 */
+$--color-primary: #5e31d8; // Element UI 主色改为紫色
+$--color-success: #5e31d8; // 成功色也用紫色
+$--color-warning: #232120; // 警告色用深灰
+$--color-danger: #232120; // 危险色用深灰
+$--color-info: #232120; // 信息色用深灰
 
 $--button-font-weight: 400;
 
-// $--color-text-regular: #1f2d3d;
+$--color-text-regular: #212224; // 常规文字主色调
 
 $--border-color-light: #dfe4ed;
 $--border-color-lighter: #e6ebf5;

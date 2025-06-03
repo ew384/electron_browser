@@ -13,32 +13,33 @@
   }
 }
 
+// 将所有颜色变量替换为新的紫色和灰色
 .blue-btn {
-  @include colorBtn($blue)
+  @include colorBtn(#5e31d8) // 改为紫色
 }
 
 .light-blue-btn {
-  @include colorBtn($light-blue)
+  @include colorBtn(#6d42e0) // 改为浅紫色
 }
 
 .red-btn {
-  @include colorBtn($red)
+  @include colorBtn(#232120) // 改为深灰
 }
 
 .pink-btn {
-  @include colorBtn($pink)
+  @include colorBtn(#232120) // 改为深灰
 }
 
 .green-btn {
-  @include colorBtn($green)
+  @include colorBtn(#5e31d8) // 改为紫色
 }
 
 .tiffany-btn {
-  @include colorBtn($tiffany)
+  @include colorBtn(#232120) // 改为深灰
 }
 
 .yellow-btn {
-  @include colorBtn($yellow)
+  @include colorBtn(#232120) // 改为深灰
 }
 
 .pan-btn {

@@ -18,8 +18,8 @@
         <screenfull id="screenfull" class="right-menu-item hover-effect" />
 
         <!-- <el-tooltip :content="$t('navbar.size')" effect="dark" placement="bottom">
-          <size-select id="size-select" class="right-menu-item hover-effect" />
-        </el-tooltip> -->
+            <size-select id="size-select" class="right-menu-item hover-effect" />
+          </el-tooltip> -->
 
         <lang-select class="right-menu-item hover-effect" />
       </template>
@@ -102,7 +102,7 @@ export default {
   overflow: hidden;
   position: relative;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  box-shadow: 0 1px 4px rgba(33, 34, 36, 0.08); // 调整阴影颜色
 
   .hamburger-container {
     line-height: 46px;
@@ -113,7 +113,7 @@ export default {
     -webkit-tap-highlight-color: transparent;
 
     &:hover {
-      background: rgba(0, 0, 0, 0.025);
+      background: rgba(33, 34, 36, 0.025); // 悬停效果调整
     }
   }
 
@@ -140,7 +140,7 @@ export default {
       padding: 0 8px;
       height: 100%;
       font-size: 18px;
-      color: #5a5e66;
+      color: #212224; // 图标颜色调整为主色调
       vertical-align: text-bottom;
 
       &.hover-effect {
@@ -148,7 +148,7 @@ export default {
         transition: background 0.3s;
 
         &:hover {
-          background: rgba(0, 0, 0, 0.025);
+          background: rgba(33, 34, 36, 0.025);
         }
       }
     }
@@ -173,6 +173,7 @@ export default {
           right: -20px;
           top: 25px;
           font-size: 12px;
+          color: #212224; // 箭头颜色
         }
       }
     }

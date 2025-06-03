@@ -210,8 +210,9 @@ export default {
   height: 34px;
   width: 100%;
   background: #fff;
-  border-bottom: 1px solid #d8dce5;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.12), 0 0 3px 0 rgba(0, 0, 0, 0.04);
+  border-bottom: 1px solid #333638; // 深灰边框
+  box-shadow: 0 1px 3px 0 rgba(33, 34, 36, 0.12), 0 0 3px 0 rgba(33, 34, 36, 0.04);
+
   .tags-view-wrapper {
     .tags-view-item {
       display: inline-block;
@@ -219,23 +220,27 @@ export default {
       cursor: pointer;
       height: 26px;
       line-height: 26px;
-      border: 1px solid #d8dce5;
-      color: #495060;
+      border: 1px solid #333638; // 深灰边框
+      color: #212224; // 主色调文字
       background: #fff;
       padding: 0 8px;
       font-size: 12px;
       margin-left: 5px;
       margin-top: 4px;
+
       &:first-of-type {
         margin-left: 15px;
       }
+
       &:last-of-type {
         margin-right: 15px;
       }
+
       &.active {
-        background-color: #42b983;
-        color: #fff;
-        border-color: #42b983;
+        background-color: #5e31d8; // 激活状态主色调背景
+        color: #fff; // 激活状态白色文字
+        border-color: #5e31d8;
+
         &::before {
           content: '';
           background: #fff;
@@ -247,8 +252,15 @@ export default {
           margin-right: 2px;
         }
       }
+
+      // 悬停效果
+      &:hover:not(.active) {
+        background-color: #f5f5f5;
+        border-color: #2a2d30;
+      }
     }
   }
+
   .contextmenu {
     margin: 0;
     background: #fff;
@@ -259,14 +271,17 @@ export default {
     border-radius: 4px;
     font-size: 12px;
     font-weight: 400;
-    color: #333;
-    box-shadow: 2px 2px 3px 0 rgba(0, 0, 0, 0.3);
+    color: #212224; // 菜单文字主色调
+    box-shadow: 2px 2px 3px 0 rgba(33, 34, 36, 0.3);
+
     li {
       margin: 0;
       padding: 7px 16px;
       cursor: pointer;
+
       &:hover {
-        background: #eee;
+        background: #f5f5f5;
+        color: #212224;
       }
     }
   }
@@ -285,11 +300,13 @@ export default {
       text-align: center;
       transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
       transform-origin: 100% 50%;
+
       &:before {
         transform: scale(0.6);
         display: inline-block;
         vertical-align: -3px;
       }
+
       &:hover {
         background-color: #b4bccc;
         color: #fff;

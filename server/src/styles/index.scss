@@ -4,6 +4,7 @@
 @import './element-ui.scss';
 @import './sidebar.scss';
 @import './btn.scss';
+@import './table-buttons.scss';
 
 body {
   height: 100%;
@@ -147,13 +148,11 @@ aside {
   text-align: right;
   padding-right: 20px;
   transition: 600ms ease position;
-  background: linear-gradient(
-    90deg,
-    rgba(32, 182, 249, 1) 0%,
-    rgba(32, 182, 249, 1) 0%,
-    rgba(33, 120, 241, 1) 100%,
-    rgba(33, 120, 241, 1) 100%
-  );
+  background: linear-gradient(90deg,
+      rgb(72, 32, 249) 0%,
+      rgb(32, 72, 249) 0%,
+      rgb(95, 33, 241) 100%,
+      rgb(54, 33, 241) 100%);
 
   .subtitle {
     font-size: 20px;
@@ -212,4 +211,54 @@ aside {
 .el-message-box__message p {
   word-wrap: break-word;
   margin-bottom: .2em;
+}
+
+// 按钮样式
+.el-button--primary {
+  background-color: #5e31d8 !important;
+  border-color: #5e31d8 !important;
+  color: #ffffff !important;
+
+  &:hover {
+    background-color: #6d42e0 !important;
+    border-color: #6d42e0 !important;
+  }
+
+  &:focus {
+    background-color: #4f28c4 !important;
+    border-color: #4f28c4 !important;
+  }
+}
+
+.el-button--success {
+  background-color: #5e31d8 !important;
+  border-color: #5e31d8 !important;
+  color: #ffffff !important;
+
+  &:hover {
+    background-color: #6d42e0 !important;
+    border-color: #6d42e0 !important;
+  }
+}
+
+.el-button--warning {
+  background-color: #5e31d8 !important;
+  border-color: #5e31d8 !important;
+  color: #ffffff !important;
+
+  &:hover {
+    background-color: #6d42e0 !important;
+    border-color: #6d42e0 !important;
+  }
+}
+
+.el-button--danger {
+  background-color: #5e31d8 !important;
+  border-color: #5e31d8 !important;
+  color: #ffffff !important;
+
+  &:hover {
+    background-color: #6d42e0 !important;
+    border-color: #6d42e0 !important;
+  }
 }

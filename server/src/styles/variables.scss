@@ -1,23 +1,33 @@
-// base color
-$blue:#324157;
-$light-blue:#3A71A8;
-$red:#C03639;
-$pink: #E65D6E;
-$green: #30B08F;
-$tiffany: #4AB7BD;
-$yellow:#FEC171;
-$panGreen: #30B08F;
+// base color - 以#212224为主色调的协调配色
+$purple-primary: #5e31d8; // 紫色主按钮
+$purple-hover: #6d42e0; // 紫色悬停
+$purple-active: #4f28c4; // 紫色激活
 
-// sidebar
-$menuText:#bfcbd9;
-$menuActiveText:#409EFF;
-$subMenuActiveText:#f4f4f5; // https://github.com/ElemeFE/element/issues/12951
+$gray-primary: #232120; // 深灰按钮
+$gray-hover: #2a2826; // 深灰悬停
+$gray-active: #1c1b1a; // 深灰激活
 
-$menuBg:#304156;
-$menuHover:#263445;
+$soft-black: #212224; // 柔和黑实体
+$soft-black-transparent: rgba(33, 34, 36, 0.85); // 透明柔和黑
+$blue: #212224; // 主色调
+$light-blue: #2a2d30; // 稍浅的深灰
+$red: #212224; // 主色调  
+$pink: #3a3d40; // 中灰
+$green: #212224; // 主色调
+$tiffany: #4a4d50; // 浅灰
+$yellow: #555858; // 更浅的灰
+$panGreen: #350ad1; // 主色调
 
-$subMenuBg:#1f2d3d;
-$subMenuHover:#001528;
+// sidebar - 协调的深灰配色
+
+$menuText: #ffffff; // 白色文字
+$menuActiveText: #ffffff; // 激活状态白色文字
+$subMenuActiveText: #ffffff; // 子菜单激活状态白色文字
+$menuBg: rgba(80, 15, 201, 0.8); // 透明背景
+$menuHover: rgba(45, 18, 124, 0.9); // 悬停背景
+$subMenuBg: rgba(18, 13, 32, 0.9); // 子菜单背景
+
+$subMenuHover: #6264da; // 子菜单悬停状态
 
 $sideBarWidth: 210px;
 
