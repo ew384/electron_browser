@@ -81,7 +81,7 @@ export default {
 
   // 悬停效果
   &:hover {
-    background: #5e31d8;
+    background: #3d17a3;
   }
 }
 </style>

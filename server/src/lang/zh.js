@@ -148,6 +148,16 @@ export default {
     replace: '替换',
     success: '成功',
     create: '创建',
+    refresh: '刷新', // 新增
+    status: '状态', // 新增
+    running: '运行中', // 新增
+    stopped: '已停止', // 新增
+    close: '关闭', // 新增
+    fingerprint: '指纹', // 新增
+    viewFingerprint: '查看指纹', // 新增
+    fingerprintDetails: '指纹详情', // 新增
+    regenerateFingerprint: '重新生成', // 新增
+    userAgent: '用户代理', // 新增
     update: '更新',
     delete_confirm: '确定删除 ${name} 吗？'
   },

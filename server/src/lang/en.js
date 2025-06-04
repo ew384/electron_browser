@@ -146,6 +146,17 @@ export default {
     replace: 'Replace',
     success: 'Success',
     create: 'Create',
+    refresh: 'Refresh', // 新增
+    status: 'Status', // 新增
+    running: 'Running', // 新增
+    stopped: 'Stopped', // 新增
+    close: 'Close', // 新增
+    fingerprint: 'Fingerprint', // 新增
+    viewFingerprint: 'View Fingerprint', // 新增
+    fingerprintDetails: 'Fingerprint Details', // 新增
+    regenerateFingerprint: 'Regenerate', // 新增
+    group: 'Group', // 新增
+    userAgent: 'User Agent', // 新增
     update: 'Update',
     delete_confirm: 'Are you sure to delete ${name} ?'
   },

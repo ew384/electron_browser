@@ -1,4 +1,3 @@
-# VirtualBrowser - server
 
 ## Project setup
 ```
