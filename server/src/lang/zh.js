@@ -9,6 +9,9 @@ export default {
     crx_store: '插件市场',
     crx_upload: '插件上传',
     crx_list: '插件管理',
+    // 新增工作流路由
+    workflow: '工作流',
+    workflow_management: '工作流管理',
     guide: '引导页',
     permission: '权限测试页',
     rolePermission: '角色权限',
@@ -149,16 +152,16 @@ export default {
     replace: '替换',
     success: '成功',
     create: '创建',
-    refresh: '刷新', // 新增
-    status: '状态', // 新增
-    running: '运行中', // 新增
-    stopped: '已停止', // 新增
-    close: '关闭', // 新增
-    fingerprint: '指纹', // 新增
-    viewFingerprint: '查看指纹', // 新增
-    fingerprintDetails: '指纹详情', // 新增
-    regenerateFingerprint: '重新生成', // 新增
-    userAgent: '用户代理', // 新增
+    refresh: '刷新',
+    status: '状态',
+    running: '运行中',
+    stopped: '已停止',
+    close: '关闭',
+    fingerprint: '指纹',
+    viewFingerprint: '查看指纹',
+    fingerprintDetails: '指纹详情',
+    regenerateFingerprint: '重新生成',
+    userAgent: '用户代理',
     update: '更新',
     delete_confirm: '确定删除 ${name} 吗？'
   },
@@ -234,5 +237,110 @@ export default {
     chat_cleared: '对话已清空',
     confirm_clear: '确定要清空所有对话记录吗？',
     confirm_delete: '确定要删除智能体吗？'
+  },
+  // 新增工作流配置
+  workflow: {
+    title: '工作流管理',
+    description: '创建和管理您的自动化工作流程',
+
+    // 按钮和操作
+    create: '新建工作流',
+    edit: '编辑工作流',
+    delete: '删除工作流',
+    run: '运行',
+    stop: '停止',
+    clone: '克隆',
+    export: '导出',
+    import: '导入',
+    refresh: '刷新',
+    save: '保存',
+    cancel: '取消',
+    configure: '配置',
+
+    // 状态
+    status: {
+      active: '已启用',
+      inactive: '未启用',
+      running: '运行中',
+      stopped: '已停止',
+      failed: '失败',
+      success: '成功'
+    },
+
+    // 分类
+    categories: {
+      featured: '运营精选',
+      analytics: '数据分析',
+      inventory: '库存管理',
+      customer: '客户服务',
+      automation: '自动化',
+      integration: '集成'
+    },
+
+    // 表单字段
+    form: {
+      name: '工作流名称',
+      namePlaceholder: '请输入工作流名称',
+      description: '描述',
+      descriptionPlaceholder: '请输入工作流描述',
+      category: '分类',
+      categoryPlaceholder: '请选择分类',
+      template: '模板',
+      templatePlaceholder: '请选择模板'
+    },
+
+    // 模板
+    templates: {
+      dataCollection: '数据采集',
+      reportGeneration: '报表生成',
+      statusMonitoring: '状态监控',
+      batchOperation: '批量操作',
+      notification: '通知提醒',
+      dataSync: '数据同步',
+      fileProcessing: '文件处理'
+    },
+
+    // 消息提示
+    messages: {
+      createSuccess: '工作流创建成功',
+      updateSuccess: '工作流更新成功',
+      deleteSuccess: '工作流删除成功',
+      runSuccess: '工作流执行成功',
+      runFailed: '工作流执行失败',
+      nameRequired: '请输入工作流名称',
+      descriptionRequired: '请输入工作流描述',
+      categoryRequired: '请选择分类',
+      confirmDelete: '确认删除此工作流吗？',
+      deleteWarning: '删除后无法恢复，请谨慎操作',
+      dataRefreshed: '数据已刷新'
+    },
+
+    // 统计信息
+    stats: {
+      totalWorkflows: '总工作流',
+      activeWorkflows: '活跃工作流',
+      totalExecutions: '总执行次数',
+      successRate: '成功率',
+      lastRun: '最后运行',
+      runCount: '执行次数',
+      avgDuration: '平均耗时',
+      never: '从未运行'
+    },
+
+    // 空状态
+    empty: {
+      title: '暂无工作流',
+      description: '点击"新建工作流"开始创建您的第一个自动化流程',
+      createButton: '立即创建'
+    },
+
+    // 工作流设计器
+    designer: {
+      title: '工作流设计器',
+      placeholder: '在这里可以集成第三方工作流设计器或开发自定义设计器',
+      addStep: '添加步骤',
+      selectTemplate: '选择模板',
+      dragToAdd: '拖拽添加步骤'
+    }
   }
 }

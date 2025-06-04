@@ -6,6 +6,9 @@ export default {
     extensions: 'Extensions',
     browser_list: 'List',
     group: 'Group',
+    // 新增工作流路由
+    workflow: 'Workflow',
+    workflow_management: 'Workflow Management',
     guide: 'Guide',
     permission: 'Permission',
     rolePermission: 'Role Permission',
@@ -173,17 +176,17 @@ export default {
     replace: 'Replace',
     success: 'Success',
     create: 'Create',
-    refresh: 'Refresh', // 新增
-    status: 'Status', // 新增
-    running: 'Running', // 新增
-    stopped: 'Stopped', // 新增
-    close: 'Close', // 新增
-    fingerprint: 'Fingerprint', // 新增
-    viewFingerprint: 'View Fingerprint', // 新增
-    fingerprintDetails: 'Fingerprint Details', // 新增
-    regenerateFingerprint: 'Regenerate', // 新增
-    group: 'Group', // 新增
-    userAgent: 'User Agent', // 新增
+    refresh: 'Refresh',
+    status: 'Status',
+    running: 'Running',
+    stopped: 'Stopped',
+    close: 'Close',
+    fingerprint: 'Fingerprint',
+    viewFingerprint: 'View Fingerprint',
+    fingerprintDetails: 'Fingerprint Details',
+    regenerateFingerprint: 'Regenerate',
+    group: 'Group',
+    userAgent: 'User Agent',
     update: 'Update',
     delete_confirm: 'Are you sure to delete ${name} ?'
   },
@@ -234,5 +237,111 @@ export default {
     tagsView: 'Open Tags-View',
     fixedHeader: 'Fixed Header',
     sidebarLogo: 'Sidebar Logo'
+  },
+  // 新增工作流配置
+  workflow: {
+    title: 'Workflow Management',
+    description: 'Create and manage your automated workflows',
+
+    // Actions
+    create: 'Create Workflow',
+    edit: 'Edit Workflow',
+    delete: 'Delete Workflow',
+    run: 'Run',
+    stop: 'Stop',
+    clone: 'Clone',
+    export: 'Export',
+    import: 'Import',
+    refresh: 'Refresh',
+    save: 'Save',
+    cancel: 'Cancel',
+    configure: 'Configure',
+
+    // Status
+    status: {
+      active: 'Active',
+      inactive: 'Inactive',
+      running: 'Running',
+      stopped: 'Stopped',
+      failed: 'Failed',
+      success: 'Success'
+    },
+
+    // Categories
+    categories: {
+      featured: 'Featured',
+      analytics: 'Analytics',
+      inventory: 'Inventory',
+      customer: 'Customer Service',
+      automation: 'Automation',
+      integration: 'Integration'
+    },
+
+    // Form fields
+    form: {
+      name: 'Workflow Name',
+      namePlaceholder: 'Enter workflow name',
+      description: 'Description',
+      descriptionPlaceholder: 'Enter workflow description',
+      category: 'Category',
+      categoryPlaceholder: 'Select category',
+      template: 'Template',
+      templatePlaceholder: 'Select template'
+    },
+
+    // Templates
+    templates: {
+      dataCollection: 'Data Collection',
+      reportGeneration: 'Report Generation',
+      statusMonitoring: 'Status Monitoring',
+      batchOperation: 'Batch Operation',
+      notification: 'Notification',
+      dataSync: 'Data Sync',
+      fileProcessing: 'File Processing'
+    },
+
+    // Messages
+    messages: {
+      createSuccess: 'Workflow created successfully',
+      updateSuccess: 'Workflow updated successfully',
+      deleteSuccess: 'Workflow deleted successfully',
+      runSuccess: 'Workflow executed successfully',
+      runFailed: 'Workflow execution failed',
+      nameRequired: 'Please enter workflow name',
+      descriptionRequired: 'Please enter workflow description',
+      categoryRequired: 'Please select category',
+      confirmDelete: 'Are you sure you want to delete this workflow?',
+      deleteWarning: 'This action cannot be undone',
+      dataRefreshed: 'Data refreshed'
+    },
+
+    // Statistics
+    stats: {
+      totalWorkflows: 'Total Workflows',
+      activeWorkflows: 'Active Workflows',
+      totalExecutions: 'Total Executions',
+      successRate: 'Success Rate',
+      lastRun: 'Last Run',
+      runCount: 'Run Count',
+      avgDuration: 'Avg Duration',
+      never: 'Never'
+    },
+
+    // Empty state
+    empty: {
+      title: 'No Workflows',
+      description: 'Click "Create Workflow" to start building your first automation',
+      createButton: 'Create Now'
+    },
+
+    // Designer
+    designer: {
+      title: 'Workflow Designer',
+      placeholder:
+        'Here you can integrate third-party workflow designers or develop custom designers',
+      addStep: 'Add Step',
+      selectTemplate: 'Select Template',
+      dragToAdd: 'Drag to add step'
+    }
   }
 }
