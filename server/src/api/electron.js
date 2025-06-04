@@ -19,3 +19,9 @@ export function getBrowserInstances() {
   }
   return Promise.resolve([])
 }
+export async function getChromeDebugPort(accountId) {
+  if (window.electronAPI) {
+    return window.electronAPI.getChromeDebugPort(accountId)
+  }
+  return Promise.reject(new Error('Electron API not available'))
+}

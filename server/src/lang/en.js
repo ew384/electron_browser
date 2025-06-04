@@ -2,6 +2,8 @@ export default {
   route: {
     dashboard: 'Dashboard',
     browser: 'Browser',
+    agent_chat: 'Agent Chat',
+    extensions: 'Extensions',
     browser_list: 'List',
     group: 'Group',
     guide: 'Guide',
@@ -36,6 +38,31 @@ export default {
     thirdparty: 'Or connect with',
     thirdpartyTips:
       'Can not be simulated on local, so please combine you own business simulation! ! !'
+  },
+  agent: {
+    agent: 'Agent',
+    agent_chat: 'Agent Chat',
+    create_agent: 'Create Agent',
+    edit_agent: 'Edit Agent',
+    delete_agent: 'Delete Agent',
+    agent_list: 'Agent List',
+    my_agents: 'My Agents',
+    recent_agents: 'Recent',
+    all_agents: 'All Agents',
+    agent_name: 'Agent Name',
+    agent_description: 'Agent Description',
+    agent_type: 'Agent Type',
+    search_agents: 'Search agents...',
+    no_agents: 'No agents',
+    create_first_agent: 'Create first agent',
+    send_message: 'Send message',
+    clear_chat: 'Clear chat',
+    file_upload: 'Upload file',
+    file_too_large: 'File size cannot exceed 10MB',
+    file_added: 'File added',
+    chat_cleared: 'Chat cleared',
+    confirm_clear: 'Are you sure you want to clear all chat history?',
+    confirm_delete: 'Are you sure you want to delete this agent?'
   },
   browser: {
     add: 'Create Browser',

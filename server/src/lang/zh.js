@@ -4,6 +4,7 @@ export default {
     browser: '浏览器',
     browser_list: '列表',
     group: '分组管理',
+    agent_chat: '智能体对话',
     extensions: '插件',
     crx_store: '插件市场',
     crx_upload: '插件上传',
@@ -208,5 +209,30 @@ export default {
     tagsView: '开启 Tags-View',
     fixedHeader: '固定 Header',
     sidebarLogo: '侧边栏 Logo'
+  },
+  agent: {
+    agent: '智能体',
+    agent_chat: '智能对话',
+    create_agent: '创建智能体',
+    edit_agent: '编辑智能体',
+    delete_agent: '删除智能体',
+    agent_list: '智能体列表',
+    my_agents: '我的智能体',
+    recent_agents: '最近使用',
+    all_agents: '全部智能体',
+    agent_name: '智能体名称',
+    agent_description: '智能体描述',
+    agent_type: '智能体类型',
+    search_agents: '搜索智能体...',
+    no_agents: '暂无智能体',
+    create_first_agent: '创建第一个智能体',
+    send_message: '发送消息',
+    clear_chat: '清空对话',
+    file_upload: '上传文件',
+    file_too_large: '文件大小不能超过 10MB',
+    file_added: '文件已添加',
+    chat_cleared: '对话已清空',
+    confirm_clear: '确定要清空所有对话记录吗？',
+    confirm_delete: '确定要删除智能体吗？'
   }
 }

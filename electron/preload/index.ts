@@ -453,7 +453,15 @@ const electronAPI = {
       return { success: false, error: error instanceof Error ? error.message : String(error), instances: [] };
     }
   },
-
+  getChromeDebugPort: async (accountId: string) => {
+    console.log('[Preload] getChromeDebugPort called with:', accountId);
+    try {
+      return await ipcRenderer.invoke('get-chrome-debug-port', accountId);
+    } catch (error) {
+      console.error('[Preload] getChromeDebugPort failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
   // 指纹管理
   getFingerprintConfig: async () => {
     console.log('[Preload] getFingerprintConfig called');

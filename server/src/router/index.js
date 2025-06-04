@@ -102,6 +102,20 @@ export const constantRoutes = [
     ]
   },
   {
+    path: '/agent',
+    component: Layout,
+    redirect: '/agent/chat',
+    meta: { title: 'agent', icon: 'el-icon-chat-dot-square' },
+    children: [
+      {
+        path: 'chat',
+        component: require('@/views/agent/index').default,
+        name: 'AgentChat',
+        meta: { title: 'agent_chat', icon: 'el-icon-chat-dot-square', affix: true }
+      }
+    ]
+  },
+  {
     path: '/crx',
     component: Layout,
     redirect: '/crx/store',

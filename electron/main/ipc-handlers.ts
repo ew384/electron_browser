@@ -485,3 +485,22 @@ ipcMain.handle('debug-force-set-fingerprint', async (event) => {
     return { success: false, error: error.message };
   }
 });
+
+// 获取Chrome调试端口（供外部ChromeDriver使用）
+ipcMain.handle('get-chrome-debug-port', async (event, accountId: string) => {
+  try {
+    console.log('[IPC] Getting Chrome debug port for account:', accountId);
+
+    const port = windowManager.getChromeDebugPort(accountId);
+    if (port) {
+      console.log('[IPC] Found debug port:', port, 'for account:', accountId);
+      return { success: true, port };
+    } else {
+      console.warn('[IPC] No debug port found for account:', accountId);
+      return { success: false, error: 'Chrome instance not found or not running' };
+    }
+  } catch (error: any) {
+    console.error('[IPC] Error getting debug port:', error);
+    return { success: false, error: error.message };
+  }
+});
