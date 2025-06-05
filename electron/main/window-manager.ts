@@ -100,10 +100,10 @@ export class WindowManager {
       `--remote-debugging-port=${debugPort}`,
       '--no-first-run',
       '--no-default-browser-check',
-      '--disable-web-security', // 允许脚本注入
+      //'--disable-web-security', // 允许脚本注入
       '--disable-features=VizDisplayCompositor',
-      '--disable-extensions',
-      '--disable-plugins',
+      //'--disable-extensions',
+      //'--disable-plugins',
       '--disable-dev-shm-usage',
       `--window-size=${fingerprintConfig.screen.width},${fingerprintConfig.screen.height}`,
       `--user-agent=${this.generateUserAgent(fingerprintConfig)}`,
