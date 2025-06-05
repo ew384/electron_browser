@@ -1,0 +1,16 @@
+{
+    "name": "page-analyzer",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "独立页面元素分析器",
+    "main": "index.js",
+    "scripts": {
+        "analyze": "node index.js",
+        "test": "node test.js"
+    },
+    "dependencies": {
+        "ws": "^8.14.2",
+        "node-fetch": "^3.3.2",
+        "commander": "^11.1.0"
+    }
+}
