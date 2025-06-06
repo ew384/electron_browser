@@ -16,10 +16,6 @@
 │   │   └── browser-integration.js
 │   ├── logs
 │   ├── output
-│   │   ├── video-publish-account_001-2025-06-06T07-35-36-897Z.json
-│   │   ├── video-publish-account_001-2025-06-06T07-44-52-556Z.json
-│   │   ├── video-publish-account_001-2025-06-06T07-51-03-421Z.json
-│   │   └── video-publish-account_001-2025-06-06T07-52-06-510Z.json
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── README.md
@@ -337,4 +333,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-110 directories, 227 files
+110 directories, 223 files
