@@ -1,0 +1,53 @@
+{
+  "workflowType": "video",
+  "account": "account_001",
+  "timestamp": "2025-06-06T07:51:03.421Z",
+  "result": {
+    "success": true,
+    "type": "video",
+    "mode": "auto_fixed",
+    "steps": [
+      {
+        "step": "upload_file",
+        "success": true,
+        "fileType": "video",
+        "fileName": "sample.mp4",
+        "fileSize": 216623
+      },
+      {
+        "step": "fill_short_title",
+        "success": true,
+        "field": "短标题",
+        "value": "精彩视频内容 #测试账号"
+      },
+      {
+        "step": "fill_description",
+        "success": true,
+        "field": "详细描述",
+        "value": "精彩视频内容 #测试账号"
+      },
+      {
+        "step": "fill_location",
+        "success": true,
+        "field": "位置",
+        "value": "北京市"
+      },
+      {
+        "step": "ready_to_publish",
+        "success": true,
+        "instruction": "所有内容已填写完成，请点击发布按钮"
+      }
+    ],
+    "readyToPublish": true,
+    "elementInfo": {
+      "shortTitle": true,
+      "description": true,
+      "descriptionFallback": true,
+      "anyContentEditable": true,
+      "location": true,
+      "fileInput": true,
+      "publishButton": true
+    },
+    "message": "video工作流完成，准备发布"
+  }
+}

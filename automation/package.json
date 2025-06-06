@@ -1,0 +1,26 @@
+{
+  "name": "wechat-automation",
+  "version": "1.0.0",
+  "description": "微信视频号自动化发布工具",
+  "type": "module",
+  "main": "wechat-publisher/index.js",
+  "scripts": {
+    "start": "node cli/automation-cli.js server",
+    "test": "node test/automation-test.js",
+    "init": "node cli/automation-cli.js init"
+  },
+  "dependencies": {
+    "ws": "^8.0.0",
+    "express": "^4.18.0",
+    "multer": "^1.4.0",
+    "commander": "^9.0.0",
+    "node-fetch": "^3.0.0"
+  },
+  "keywords": [
+    "automation",
+    "wechat",
+    "publishing"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
