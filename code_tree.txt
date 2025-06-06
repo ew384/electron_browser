@@ -1,6 +1,45 @@
 .
 ├── assets
 ├── automation
+│   ├── api
+│   │   └── automation-server.js
+│   ├── audio
+│   ├── cli
+│   │   └── automation-cli.js
+│   ├── config
+│   │   ├── account-example.json
+│   │   ├── video-template.json
+│   │   └── workflows.json
+│   ├── debug-page-elements.js
+│   ├── images
+│   ├── integration
+│   │   └── browser-integration.js
+│   ├── logs
+│   ├── output
+│   │   ├── video-publish-account_001-2025-06-06T07-35-36-897Z.json
+│   │   ├── video-publish-account_001-2025-06-06T07-44-52-556Z.json
+│   │   ├── video-publish-account_001-2025-06-06T07-51-03-421Z.json
+│   │   └── video-publish-account_001-2025-06-06T07-52-06-510Z.json
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── README.md
+│   ├── test
+│   │   └── automation-test.js
+│   ├── uploads
+│   ├── video-account.json
+│   ├── video-accounts.json
+│   ├── video-content.json
+│   ├── videos
+│   │   └── sample.mp4
+│   ├── video-template.json
+│   └── wechat-publisher
+│       ├── chrome-controller.js
+│       ├── content-processor.js
+│       ├── element-analyzer.js
+│       ├── file-uploader.js
+│       ├── index.js
+│       ├── template-engine.js
+│       └── workflow-engine.js
 ├── code_tree.txt
 ├── data
 ├── electron
@@ -298,4 +337,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-98 directories, 200 files
+110 directories, 227 files
