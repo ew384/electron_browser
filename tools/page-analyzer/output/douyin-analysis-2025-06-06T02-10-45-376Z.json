@@ -1,0 +1,391 @@
+{
+  "url": "https://creator.douyin.com/creator-micro/content/upload",
+  "timestamp": "2025-06-06T02:10:45.358Z",
+  "platform": "douyin",
+  "elements": {
+    "tabContainer": {
+      "found": true,
+      "selector": "div.tab-container-DjaX1b",
+      "element": {
+        "tagName": "div",
+        "className": "tab-container-DjaX1b",
+        "id": "",
+        "textContent": "发布视频发布图文发布全景视频了解上传规则详情",
+        "placeholder": "",
+        "type": "",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".tab-container-DjaX1b",
+        "attributes": {}
+      },
+      "description": "标签页容器",
+      "priority": "critical",
+      "expectedSelectors": [
+        "div.tab-container-DjaX1b",
+        "div[class*=\"tab-container\"]",
+        ".tab-container"
+      ]
+    },
+    "videoTab": {
+      "found": true,
+      "selector": "div.tab-item-BcCLTS:nth-child(1)",
+      "element": {
+        "tagName": "div",
+        "className": "tab-item-BcCLTS active-i8Pu0m",
+        "id": "",
+        "textContent": "发布视频",
+        "placeholder": "",
+        "type": "",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".tab-item-BcCLTS.active-i8Pu0m",
+        "attributes": {}
+      },
+      "description": "发布视频标签页",
+      "priority": "critical",
+      "expectedSelectors": [
+        "div.tab-item-BcCLTS:nth-child(1)",
+        "div[class*=\"tab-item\"]:contains(\"发布视频\")",
+        ".tab-item-BcCLTS:first-child"
+      ]
+    },
+    "imageTextTab": {
+      "found": true,
+      "selector": "div.tab-item-BcCLTS:nth-child(2)",
+      "element": {
+        "tagName": "div",
+        "className": "tab-item-BcCLTS",
+        "id": "",
+        "textContent": "发布图文",
+        "placeholder": "",
+        "type": "",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".tab-item-BcCLTS",
+        "attributes": {}
+      },
+      "description": "发布图文标签页",
+      "priority": "critical",
+      "expectedSelectors": [
+        "div.tab-item-BcCLTS:nth-child(2)",
+        "div[class*=\"tab-item\"]:contains(\"发布图文\")",
+        ".tab-item-BcCLTS:nth-child(2)"
+      ]
+    },
+    "panoramaTab": {
+      "found": true,
+      "selector": "div.tab-item-BcCLTS:nth-child(3)",
+      "element": {
+        "tagName": "div",
+        "className": "tab-item-BcCLTS",
+        "id": "",
+        "textContent": "发布全景视频",
+        "placeholder": "",
+        "type": "",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".tab-item-BcCLTS",
+        "attributes": {}
+      },
+      "description": "发布全景视频标签页",
+      "priority": "critical",
+      "expectedSelectors": [
+        "div.tab-item-BcCLTS:nth-child(3)",
+        "div[class*=\"tab-item\"]:contains(\"发布全景视频\")",
+        ".tab-item-BcCLTS:nth-child(3)"
+      ]
+    },
+    "activeTab": {
+      "found": true,
+      "selector": "div.tab-item-BcCLTS.active-i8Pu0m",
+      "element": {
+        "tagName": "div",
+        "className": "tab-item-BcCLTS active-i8Pu0m",
+        "id": "",
+        "textContent": "发布视频",
+        "placeholder": "",
+        "type": "",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".tab-item-BcCLTS.active-i8Pu0m",
+        "attributes": {}
+      },
+      "description": "当前激活的标签页",
+      "priority": "high",
+      "expectedSelectors": [
+        "div.tab-item-BcCLTS.active-i8Pu0m",
+        "div[class*=\"tab-item\"][class*=\"active\"]",
+        ".tab-item-BcCLTS.active-i8Pu0m"
+      ]
+    },
+    "uploadButton": {
+      "found": true,
+      "selector": "button.container-drag-btn-k6XmB4",
+      "element": {
+        "tagName": "button",
+        "className": "semi-button semi-button-primary container-drag-btn-k6XmB4 semi-button-with-icon",
+        "id": "",
+        "textContent": "上传视频",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".semi-button.semi-button-primary.container-drag-btn-k6XmB4",
+        "attributes": {}
+      },
+      "description": "上传按钮",
+      "priority": "critical",
+      "expectedSelectors": [
+        "button.container-drag-btn-k6XmB4",
+        "button[class*=\"container-drag-btn\"]",
+        "button.semi-button-primary[class*=\"drag-btn\"]"
+      ]
+    },
+    "uploadVideoButton": {
+      "found": true,
+      "selector": "button:contains(\"上传视频\")",
+      "element": {
+        "tagName": "button",
+        "className": "semi-button semi-button-primary container-drag-btn-k6XmB4 semi-button-with-icon",
+        "id": "",
+        "textContent": "上传视频",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".semi-button.semi-button-primary.container-drag-btn-k6XmB4",
+        "attributes": {}
+      },
+      "description": "上传视频按钮",
+      "priority": "critical",
+      "expectedSelectors": [
+        "button:contains(\"上传视频\")",
+        "button .semi-button-content-right:contains(\"上传视频\")",
+        "button[class*=\"drag-btn\"] span:contains(\"上传视频\")"
+      ]
+    },
+    "uploadImageButton": {
+      "found": true,
+      "selector": "button:contains(\"上传图文\")",
+      "element": {
+        "tagName": "button",
+        "className": "semi-button semi-button-primary container-drag-btn-k6XmB4 semi-button-with-icon",
+        "id": "",
+        "textContent": "上传图文",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": ".semi-button.semi-button-primary.container-drag-btn-k6XmB4",
+        "attributes": {}
+      },
+      "description": "上传图文按钮",
+      "priority": "critical",
+      "expectedSelectors": [
+        "button:contains(\"上传图文\")",
+        "button .semi-button-content-right:contains(\"上传图文\")",
+        "button[class*=\"drag-btn\"] span:contains(\"上传图文\")"
+      ]
+    },
+    "uploadPanoramaButton": {
+      "found": true,
+      "selector": "button:contains(\"上传全景视频\")",
+      "element": {
+        "tagName": "button",
+        "className": "semi-button semi-button-primary container-drag-btn-k6XmB4 semi-button-with-icon",
+        "id": "",
+        "textContent": "上传全景视频",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": ".semi-button.semi-button-primary.container-drag-btn-k6XmB4",
+        "attributes": {}
+      },
+      "description": "上传全景视频按钮",
+      "priority": "critical",
+      "expectedSelectors": [
+        "button:contains(\"上传全景视频\")",
+        "button .semi-button-content-right:contains(\"上传全景视频\")",
+        "button[class*=\"drag-btn\"] span:contains(\"上传全景视频\")"
+      ]
+    },
+    "fileInput": {
+      "found": true,
+      "selector": "input[type=\"file\"]",
+      "element": {
+        "tagName": "input",
+        "className": "",
+        "id": "",
+        "textContent": "",
+        "placeholder": "",
+        "type": "file",
+        "accept": "video/x-flv,video/mp4,video/x-m4v,video/*,.flv,.avi,.wmv,.webm,.ts,.mp4,.mpeg4,.mov,.m4v,.mpg,.mkv,.m4",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": "input[type=\"file\"]",
+        "attributes": {}
+      },
+      "description": "文件选择输入框",
+      "priority": "critical",
+      "expectedSelectors": [
+        "input[type=\"file\"]",
+        "input[accept*=\"video\"]",
+        "input[accept*=\"image\"]"
+      ]
+    },
+    "dragArea": {
+      "found": false,
+      "description": "拖拽上传区域",
+      "priority": "high",
+      "expectedSelectors": [
+        "div[class*=\"drag-area\"]",
+        "div[class*=\"upload-area\"]",
+        "div[class*=\"drop-zone\"]"
+      ]
+    },
+    "titleInput": {
+      "found": false,
+      "description": "作品标题输入框",
+      "priority": "high",
+      "expectedSelectors": [
+        "input[placeholder*=\"填写作品标题\"]",
+        "input[placeholder*=\"标题\"]",
+        "textarea[placeholder*=\"标题\"]"
+      ]
+    },
+    "descriptionInput": {
+      "found": false,
+      "description": "作品描述输入框",
+      "priority": "high",
+      "expectedSelectors": [
+        "textarea[placeholder*=\"添加作品描述\"]",
+        "textarea[placeholder*=\"描述\"]",
+        "div[contenteditable=\"true\"][placeholder*=\"描述\"]"
+      ]
+    },
+    "publishButton": {
+      "found": true,
+      "selector": "button:contains(\"发布\")",
+      "element": {
+        "tagName": "button",
+        "className": "douyin-creator-master-button douyin-creator-master-button-primary douyin-creator-master-button-size-large douyin-creator-master-button-block header-button-KP2xn1",
+        "id": "",
+        "textContent": "高清发布",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".douyin-creator-master-button.douyin-creator-master-button-primary.douyin-creator-master-button-size-large",
+        "attributes": {}
+      },
+      "description": "发布按钮",
+      "priority": "critical",
+      "expectedSelectors": [
+        "button:contains(\"发布\")",
+        "button[class*=\"publish\"]",
+        "button.semi-button:contains(\"发布\")"
+      ]
+    },
+    "draftButton": {
+      "found": false,
+      "description": "存草稿按钮",
+      "priority": "medium",
+      "expectedSelectors": [
+        "button:contains(\"存草稿\")",
+        "button[class*=\"draft\"]",
+        "button:contains(\"保存草稿\")"
+      ]
+    },
+    "coverUpload": {
+      "found": false,
+      "description": "封面上传区域",
+      "priority": "medium",
+      "expectedSelectors": [
+        "div[class*=\"cover-upload\"]",
+        "button:contains(\"上传封面\")",
+        "div[class*=\"poster-upload\"]"
+      ]
+    },
+    "tagInput": {
+      "found": false,
+      "description": "话题标签输入框",
+      "priority": "medium",
+      "expectedSelectors": [
+        "input[placeholder*=\"添加话题\"]",
+        "input[placeholder*=\"话题\"]",
+        "div[class*=\"tag-input\"]"
+      ]
+    },
+    "locationInput": {
+      "found": false,
+      "description": "位置信息输入框",
+      "priority": "low",
+      "expectedSelectors": [
+        "input[placeholder*=\"添加位置\"]",
+        "input[placeholder*=\"位置\"]",
+        "div[class*=\"location-input\"]"
+      ]
+    },
+    "privacySettings": {
+      "found": false,
+      "description": "隐私设置选项",
+      "priority": "medium",
+      "expectedSelectors": [
+        "div[class*=\"privacy-setting\"]",
+        "div[class*=\"visible-setting\"]",
+        "select[class*=\"privacy\"]"
+      ]
+    },
+    "learnLink": {
+      "found": true,
+      "selector": "a.learn-link-cmfbHv",
+      "element": {
+        "tagName": "a",
+        "className": "learn-link-cmfbHv",
+        "id": "",
+        "textContent": "了解上传规则详情",
+        "placeholder": "",
+        "type": "",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".learn-link-cmfbHv",
+        "attributes": {}
+      },
+      "description": "学习更多链接",
+      "priority": "low",
+      "expectedSelectors": [
+        "a.learn-link-cmfbHv",
+        "a[class*=\"learn-link\"]",
+        "a[href*=\"creator-school\"]"
+      ]
+    }
+  },
+  "pageInfo": {
+    "title": "抖音创作者中心",
+    "currentTab": "video",
+    "uploadType": "video"
+  },
+  "summary": {
+    "foundElements": 12,
+    "totalElements": 20,
+    "criticalElements": 10,
+    "foundCriticalElements": 10,
+    "confidence": 60,
+    "criticalConfidence": 100,
+    "readyForAutomation": true,
+    "currentUploadType": "video",
+    "platformReady": true
+  }
+}
