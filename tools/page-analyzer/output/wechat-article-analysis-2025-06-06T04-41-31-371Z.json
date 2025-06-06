@@ -1,0 +1,190 @@
+{
+  "url": "https://channels.weixin.qq.com/platform/post/finderNewLifeCreate",
+  "timestamp": "2025-06-06T04:41:25.311Z",
+  "contentType": "article",
+  "contentTypeName": "图文上传",
+  "iframeAnalysis": true,
+  "elements": {
+    "titleInput": {
+      "found": true,
+      "selector": "input[placeholder*=\"标题\"]",
+      "element": {
+        "tagName": "input",
+        "className": "weui-desktop-form__input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "填写标题, 22个字符内",
+        "type": "text",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-form__input",
+        "boundingRect": {}
+      },
+      "description": "图文标题输入框",
+      "priority": "critical",
+      "expectedSelectors": [
+        "input[placeholder*=\"标题\"]",
+        "input[placeholder*=\"请输入标题\"]",
+        ".title-input input"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "contentEditor": {
+      "found": false,
+      "description": "图文内容编辑器",
+      "priority": "critical",
+      "expectedSelectors": [
+        "div[contenteditable=\"true\"]",
+        ".editor-content",
+        ".rich-text-editor",
+        "textarea[placeholder*=\"正文\"]"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "imageUpload": {
+      "found": true,
+      "selector": "input[type=\"file\"][accept*=\"image\"]",
+      "element": {
+        "tagName": "input",
+        "className": "",
+        "id": "",
+        "textContent": "",
+        "placeholder": "",
+        "type": "file",
+        "accept": "image/*",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": "input[type=\"file\"]",
+        "boundingRect": {}
+      },
+      "description": "图片上传区域",
+      "priority": "critical",
+      "expectedSelectors": [
+        "div.image-upload",
+        "input[type=\"file\"][accept*=\"image\"]",
+        ".upload-image",
+        "div[class*=\"img-upload\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "coverUpload": {
+      "found": false,
+      "description": "封面图片上传",
+      "priority": "high",
+      "expectedSelectors": [
+        "div.cover-upload",
+        ".cover-image-upload",
+        "input[accept*=\"image\"][class*=\"cover\"]"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "tagInput": {
+      "found": false,
+      "description": "标签输入框",
+      "priority": "medium",
+      "expectedSelectors": [
+        "input[placeholder*=\"标签\"]",
+        "input[placeholder*=\"话题\"]",
+        ".tag-input"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "locationSearch": {
+      "found": true,
+      "selector": "input[placeholder=\"搜索附近位置\"]",
+      "element": {
+        "tagName": "input",
+        "className": "weui-desktop-form__input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "搜索附近位置",
+        "type": "text",
+        "accept": "",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": ".weui-desktop-form__input",
+        "boundingRect": {}
+      },
+      "description": "位置搜索框",
+      "priority": "medium",
+      "expectedSelectors": [
+        "input[placeholder=\"搜索附近位置\"]",
+        "input[placeholder*=\"位置\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "publishButton": {
+      "found": true,
+      "selector": "button:contains(\"发表\")",
+      "element": {
+        "tagName": "button",
+        "className": "weui-desktop-btn weui-desktop-btn_primary",
+        "id": "",
+        "textContent": "发表",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-btn.weui-desktop-btn_primary",
+        "boundingRect": {}
+      },
+      "description": "发布按钮",
+      "priority": "high",
+      "expectedSelectors": [
+        "button[class*=\"publish\"]",
+        "button:contains(\"发布\")",
+        "button:contains(\"发表\")",
+        ".publish-btn",
+        ".weui-desktop-btn.weui-desktop-btn_primary",
+        "button.weui-desktop-btn_primary"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "saveDraftButton": {
+      "found": true,
+      "selector": "button:contains(\"保存草稿\")",
+      "element": {
+        "tagName": "button",
+        "className": "weui-desktop-btn weui-desktop-btn_default",
+        "id": "",
+        "textContent": "保存草稿",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-btn.weui-desktop-btn_default",
+        "boundingRect": {}
+      },
+      "description": "保存草稿按钮",
+      "priority": "medium",
+      "expectedSelectors": [
+        "button[class*=\"draft\"]",
+        "button:contains(\"保存草稿\")",
+        ".save-draft"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    }
+  },
+  "summary": {
+    "foundElements": 5,
+    "totalElements": 8,
+    "criticalElements": 3,
+    "foundCriticalElements": 2,
+    "confidence": 63,
+    "criticalConfidence": 67,
+    "readyForAutomation": true,
+    "analysisMethod": "iframe",
+    "pageType": "article"
+  }
+}

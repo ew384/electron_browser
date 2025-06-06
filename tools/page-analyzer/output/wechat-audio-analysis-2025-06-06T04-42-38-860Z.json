@@ -1,0 +1,133 @@
+{
+  "url": "https://channels.weixin.qq.com/platform/post/createAudio",
+  "timestamp": "2025-06-06T04:42:32.782Z",
+  "contentType": "audio",
+  "contentTypeName": "音频上传",
+  "iframeAnalysis": true,
+  "elements": {
+    "audioUpload": {
+      "found": true,
+      "selector": "input[type=\"file\"][accept*=\"audio\"]",
+      "element": {
+        "tagName": "input",
+        "className": "",
+        "id": "",
+        "textContent": "",
+        "placeholder": "",
+        "type": "file",
+        "accept": "audio/x-wav,audio/mpeg",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": "input[type=\"file\"]",
+        "boundingRect": {}
+      },
+      "description": "音频文件上传",
+      "priority": "critical",
+      "expectedSelectors": [
+        "input[type=\"file\"][accept*=\"audio\"]",
+        "div.audio-upload",
+        ".audio-upload-area",
+        "div[class*=\"audio-upload\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "audioTitle": {
+      "found": true,
+      "selector": "input[placeholder*=\"标题\"]",
+      "element": {
+        "tagName": "input",
+        "className": "weui-desktop-form__input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "请填写标题",
+        "type": "text",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-form__input",
+        "boundingRect": {}
+      },
+      "description": "音频标题输入",
+      "priority": "critical",
+      "expectedSelectors": [
+        "input[placeholder*=\"音频标题\"]",
+        "input[placeholder*=\"标题\"]",
+        ".audio-title-input"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "audioCover": {
+      "found": false,
+      "description": "音频封面上传",
+      "priority": "high",
+      "expectedSelectors": [
+        "input[type=\"file\"][accept*=\"image\"][class*=\"cover\"]",
+        ".audio-cover-upload",
+        "div[class*=\"audio-cover\"]"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "audioDescription": {
+      "found": false,
+      "description": "音频描述",
+      "priority": "high",
+      "expectedSelectors": [
+        "textarea[placeholder*=\"音频描述\"]",
+        "textarea[placeholder*=\"说点什么\"]",
+        "div[contenteditable=\"true\"]"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "categorySelect": {
+      "found": false,
+      "description": "音频分类选择",
+      "priority": "medium",
+      "expectedSelectors": [
+        "select[class*=\"category\"]",
+        ".category-select",
+        "div[class*=\"category-dropdown\"]"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "tagInput": {
+      "found": false,
+      "description": "标签输入框",
+      "priority": "medium",
+      "expectedSelectors": [
+        "input[placeholder*=\"标签\"]",
+        "input[placeholder*=\"话题\"]",
+        ".tag-input"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "publishButton": {
+      "found": false,
+      "description": "发布按钮",
+      "priority": "high",
+      "expectedSelectors": [
+        "button[class*=\"publish\"]",
+        "button:contains(\"发布\")",
+        ".publish-btn"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    }
+  },
+  "summary": {
+    "foundElements": 2,
+    "totalElements": 7,
+    "criticalElements": 2,
+    "foundCriticalElements": 2,
+    "confidence": 29,
+    "criticalConfidence": 100,
+    "readyForAutomation": true,
+    "analysisMethod": "iframe",
+    "pageType": "audio"
+  }
+}

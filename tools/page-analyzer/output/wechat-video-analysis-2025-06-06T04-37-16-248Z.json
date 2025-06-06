@@ -1,0 +1,220 @@
+{
+  "url": "https://channels.weixin.qq.com/platform/post/create",
+  "timestamp": "2025-06-06T04:37:11.197Z",
+  "contentType": "video",
+  "contentTypeName": "视频上传",
+  "iframeAnalysis": true,
+  "elements": {
+    "uploadArea": {
+      "found": true,
+      "selector": "div.center",
+      "element": {
+        "tagName": "div",
+        "className": "center",
+        "id": "",
+        "textContent": "上传时长2小时内，大小不超过4GB，建议分辨率720p及以上，码率10Mbps以内，格式为MP4/H.264格式  发布视频动态，分辨率目前建议720p及以上，使用常见码流，码率10Mbps以内且原片",
+        "placeholder": "",
+        "type": "",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".center",
+        "boundingRect": {}
+      },
+      "description": "视频上传区域",
+      "priority": "critical",
+      "expectedSelectors": [
+        "div.center",
+        "div.ant-upload.ant-upload-drag",
+        "div.upload-content",
+        "div.post-upload-wrap"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "fileInput": {
+      "found": true,
+      "selector": "input[type=\"file\"]",
+      "element": {
+        "tagName": "input",
+        "className": "",
+        "id": "",
+        "textContent": "",
+        "placeholder": "",
+        "type": "file",
+        "accept": "video/mp4,video/x-m4v,video/*",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": "input[type=\"file\"]",
+        "boundingRect": {}
+      },
+      "description": "文件选择输入框",
+      "priority": "critical",
+      "expectedSelectors": [
+        "input[type=\"file\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "uploadIcon": {
+      "found": true,
+      "selector": "span.add-icon.weui-icon-outlined-add",
+      "element": {
+        "tagName": "span",
+        "className": "add-icon weui-icon-outlined-add",
+        "id": "",
+        "textContent": "",
+        "placeholder": "",
+        "type": "",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".add-icon.weui-icon-outlined-add",
+        "boundingRect": {}
+      },
+      "description": "上传加号图标",
+      "priority": "high",
+      "expectedSelectors": [
+        "span.add-icon.weui-icon-outlined-add",
+        ".add-icon"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "videoDescription": {
+      "found": true,
+      "selector": "input[placeholder*=\"概括视频主要内容\"]",
+      "element": {
+        "tagName": "input",
+        "className": "weui-desktop-form__input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "概括视频主要内容，字数建议6-16个字符",
+        "type": "text",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-form__input",
+        "boundingRect": {}
+      },
+      "description": "视频描述输入框",
+      "priority": "high",
+      "expectedSelectors": [
+        "input[placeholder*=\"概括视频主要内容\"]",
+        "textarea[placeholder*=\"视频描述\"]",
+        "textarea[placeholder*=\"说点什么\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "locationSearch": {
+      "found": true,
+      "selector": "input[placeholder=\"搜索附近位置\"]",
+      "element": {
+        "tagName": "input",
+        "className": "weui-desktop-form__input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "搜索附近位置",
+        "type": "text",
+        "accept": "",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": ".weui-desktop-form__input",
+        "boundingRect": {}
+      },
+      "description": "位置搜索框",
+      "priority": "medium",
+      "expectedSelectors": [
+        "input[placeholder=\"搜索附近位置\"]",
+        "input[placeholder*=\"位置\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "musicAgreement": {
+      "found": true,
+      "selector": "input[type=\"checkbox\"]",
+      "element": {
+        "tagName": "input",
+        "className": "ant-checkbox-input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "",
+        "type": "checkbox",
+        "accept": "",
+        "disabled": true,
+        "visible": false,
+        "cssSelector": ".ant-checkbox-input",
+        "boundingRect": {}
+      },
+      "description": "音乐人发表须知勾选框",
+      "priority": "critical",
+      "expectedSelectors": [
+        "i.weui-desktop-icon-checkbox",
+        ".weui-desktop-icon-checkbox",
+        "input[type=\"checkbox\"]",
+        "input[type=\"checkbox\"][class*=\"agreement\"]",
+        "input[type=\"checkbox\"][class*=\"notice\"]",
+        ".agreement-checkbox input",
+        ".notice-checkbox input"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "agreementText": {
+      "found": false,
+      "description": "协议文本",
+      "priority": "medium",
+      "expectedSelectors": [
+        "label:contains(\"我已阅读\")",
+        "span:contains(\"视频号音乐人发表须知\")",
+        "div:contains(\"我已阅读\")",
+        ".agreement-text"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "publishButton": {
+      "found": true,
+      "selector": "button:contains(\"发表\")",
+      "element": {
+        "tagName": "button",
+        "className": "weui-desktop-btn weui-desktop-btn_primary",
+        "id": "",
+        "textContent": "发表",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-btn.weui-desktop-btn_primary",
+        "boundingRect": {}
+      },
+      "description": "发布按钮",
+      "priority": "high",
+      "expectedSelectors": [
+        "button[class*=\"publish\"]",
+        "button:contains(\"发布\")",
+        "button:contains(\"发表\")",
+        "button:contains(\"发表音乐\")",
+        ".publish-btn",
+        ".weui-desktop-btn.weui-desktop-btn_primary",
+        "button.weui-desktop-btn_primary"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    }
+  },
+  "summary": {
+    "foundElements": 7,
+    "totalElements": 8,
+    "criticalElements": 3,
+    "foundCriticalElements": 3,
+    "confidence": 88,
+    "criticalConfidence": 100,
+    "readyForAutomation": true,
+    "analysisMethod": "iframe",
+    "pageType": "video"
+  }
+}

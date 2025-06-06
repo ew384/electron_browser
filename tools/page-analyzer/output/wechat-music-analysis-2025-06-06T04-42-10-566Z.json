@@ -1,0 +1,177 @@
+{
+  "url": "https://channels.weixin.qq.com/platform/post/createMusic",
+  "timestamp": "2025-06-06T04:42:00.846Z",
+  "contentType": "music",
+  "contentTypeName": "音乐上传",
+  "iframeAnalysis": true,
+  "elements": {
+    "musicUpload": {
+      "found": true,
+      "selector": "input[type=\"file\"][accept*=\"audio\"]",
+      "element": {
+        "tagName": "input",
+        "className": "",
+        "id": "",
+        "textContent": "",
+        "placeholder": "",
+        "type": "file",
+        "accept": "audio/x-wav,audio/mpeg,audio/flac",
+        "disabled": false,
+        "visible": false,
+        "cssSelector": "input[type=\"file\"]",
+        "boundingRect": {}
+      },
+      "description": "音乐文件上传",
+      "priority": "critical",
+      "expectedSelectors": [
+        "input[type=\"file\"][accept*=\"audio\"]",
+        "div.music-upload",
+        ".audio-upload-area",
+        "div[class*=\"music-upload\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "musicTitle": {
+      "found": true,
+      "selector": "input[placeholder*=\"歌曲名\"]",
+      "element": {
+        "tagName": "input",
+        "className": "weui-desktop-form__input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "请填写歌曲名称",
+        "type": "text",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-form__input",
+        "boundingRect": {}
+      },
+      "description": "音乐标题输入",
+      "priority": "critical",
+      "expectedSelectors": [
+        "input[placeholder*=\"歌曲名\"]",
+        "input[placeholder*=\"音乐标题\"]",
+        ".music-title-input"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "artistName": {
+      "found": true,
+      "selector": "input[placeholder*=\"演唱者\"]",
+      "element": {
+        "tagName": "input",
+        "className": "weui-desktop-form__input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "填写演唱者(选填)",
+        "type": "text",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-form__input",
+        "boundingRect": {}
+      },
+      "description": "歌手/艺术家名称",
+      "priority": "high",
+      "expectedSelectors": [
+        "input[placeholder*=\"歌手\"]",
+        "input[placeholder*=\"艺术家\"]",
+        "input[placeholder*=\"演唱者\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "albumName": {
+      "found": true,
+      "selector": "input[placeholder*=\"专辑\"]",
+      "element": {
+        "tagName": "input",
+        "className": "weui-desktop-form__input",
+        "id": "",
+        "textContent": "",
+        "placeholder": "请填写专辑名称",
+        "type": "text",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-form__input",
+        "boundingRect": {}
+      },
+      "description": "专辑名称",
+      "priority": "medium",
+      "expectedSelectors": [
+        "input[placeholder*=\"专辑\"]",
+        "input[placeholder*=\"专辑名称\"]"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    },
+    "musicCover": {
+      "found": false,
+      "description": "音乐封面上传",
+      "priority": "high",
+      "expectedSelectors": [
+        "input[type=\"file\"][accept*=\"image\"][class*=\"cover\"]",
+        ".music-cover-upload",
+        "div[class*=\"album-cover\"]"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "musicDescription": {
+      "found": false,
+      "description": "音乐描述",
+      "priority": "medium",
+      "expectedSelectors": [
+        "textarea[placeholder*=\"音乐描述\"]",
+        "textarea[placeholder*=\"说点什么\"]",
+        ".music-desc-input"
+      ],
+      "activationStatus": "[未激活]",
+      "wasInitiallyVisible": false
+    },
+    "publishButton": {
+      "found": true,
+      "selector": "button:contains(\"发表\")",
+      "element": {
+        "tagName": "button",
+        "className": "weui-desktop-btn weui-desktop-btn_primary",
+        "id": "",
+        "textContent": "发表音乐",
+        "placeholder": "",
+        "type": "button",
+        "accept": "",
+        "disabled": false,
+        "visible": true,
+        "cssSelector": ".weui-desktop-btn.weui-desktop-btn_primary",
+        "boundingRect": {}
+      },
+      "description": "发布按钮",
+      "priority": "high",
+      "expectedSelectors": [
+        "button[class*=\"publish\"]",
+        "button:contains(\"发布\")",
+        "button:contains(\"发表\")",
+        ".publish-btn",
+        ".weui-desktop-btn.weui-desktop-btn_primary",
+        "button.weui-desktop-btn_primary"
+      ],
+      "activationStatus": "[初始可见]",
+      "wasInitiallyVisible": true
+    }
+  },
+  "summary": {
+    "foundElements": 5,
+    "totalElements": 7,
+    "criticalElements": 2,
+    "foundCriticalElements": 2,
+    "confidence": 71,
+    "criticalConfidence": 100,
+    "readyForAutomation": true,
+    "analysisMethod": "iframe",
+    "pageType": "music"
+  }
+}
