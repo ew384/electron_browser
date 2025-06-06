@@ -1,13 +1,6 @@
 .
 ├── assets
 ├── automation
-│   ├── index.js
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── README.md
-│   ├── requirements.txt
-│   ├── test-api.js
-│   └── test-api.py
 ├── code_tree.txt
 ├── data
 ├── electron
@@ -269,6 +262,20 @@
 │   └── vue.config.js
 ├── start.js
 ├── start.sh
+├── tools
+│   └── page-analyzer
+│       ├── douyin_analyzer.js
+│       ├── output
+│       │   ├── douyin-analysis-2025-06-06T02-10-45-376Z.json
+│       │   ├── wechat-article-analysis-2025-06-06T04-41-31-371Z.json
+│       │   ├── wechat-audio-analysis-2025-06-06T04-42-38-860Z.json
+│       │   ├── wechat-music-analysis-2025-06-06T04-42-10-566Z.json
+│       │   └── wechat-video-analysis-2025-06-06T04-37-16-248Z.json
+│       ├── package.json
+│       ├── package-lock.json
+│       ├── README.md
+│       ├── scan-ports.js
+│       └── wechat_analyzer.js
 ├── tree.sh
 └── worker
     ├── auto-imports.d.ts
@@ -291,4 +298,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-95 directories, 196 files
+98 directories, 200 files
