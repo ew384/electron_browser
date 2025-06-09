@@ -16,6 +16,7 @@
 │   │   └── browser-integration.js
 │   ├── logs
 │   ├── output
+│   │   └── video-publish-account_1748421858240_7ua5pcz7x-2025-06-09T06-33-50-007Z.json
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── README.md
@@ -43,6 +44,7 @@
 │   │   ├── fingerprint
 │   │   │   ├── generator.ts
 │   │   │   └── validator.ts
+│   │   ├── http-api-server.ts
 │   │   ├── index.ts
 │   │   ├── ipc-handlers.ts
 │   │   ├── storage
@@ -332,4 +334,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-110 directories, 222 files
+110 directories, 224 files
