@@ -1,8 +1,11 @@
+// 在 electron/main/window-manager.ts 中修改端口分配逻辑
+
 import { BrowserWindow, session } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as net from 'net'; // 新增：用于端口检测
 import { FingerprintGenerator } from './fingerprint/generator';
 import { FingerprintValidator } from './fingerprint/validator';
 import { BrowserInstance, AccountConfig, FingerprintConfig } from '../shared/types';
@@ -16,8 +19,51 @@ export class WindowManager {
   // 存储每个窗口的指纹配置，供 preload 脚本查询
   private static windowFingerprintMap = new Map<number, FingerprintConfig>();
 
-  // 实例计数器确保每个实例都不同
+  // 🔧 修改：从9711开始分配端口
+  private static BASE_DEBUG_PORT = 9711;
   private static instanceCounter = 0;
+
+  // 🔧 新增：检查端口是否可用
+  private async isPortAvailable(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+
+      server.listen(port, 'localhost', () => {
+        server.close(() => {
+          console.log(`[WindowManager] 端口 ${port} 可用`);
+          resolve(true);
+        });
+      });
+
+      server.on('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          console.log(`[WindowManager] 端口 ${port} 已被占用`);
+          resolve(false);
+        } else {
+          console.log(`[WindowManager] 端口 ${port} 检查失败:`, err.message);
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  // 🔧 新增：找到可用的调试端口
+  private async findAvailableDebugPort(): Promise<number> {
+    const maxAttempts = 100; // 最多尝试100个端口
+
+    for (let i = 0; i < maxAttempts; i++) {
+      const port = WindowManager.BASE_DEBUG_PORT + i;
+
+      console.log(`[WindowManager] 检查端口 ${port} 是否可用...`);
+
+      if (await this.isPortAvailable(port)) {
+        console.log(`[WindowManager] ✅ 找到可用端口: ${port}`);
+        return port;
+      }
+    }
+
+    throw new Error(`无法在 ${WindowManager.BASE_DEBUG_PORT}-${WindowManager.BASE_DEBUG_PORT + maxAttempts} 范围内找到可用端口`);
+  }
 
   async createBrowserInstance(accountId: string, config: AccountConfig): Promise<BrowserInstance> {
     try {
@@ -54,7 +100,7 @@ export class WindowManager {
         accountId,
         windowId: chromeInfo.port, // 使用调试端口作为标识
         status: 'running',
-        url: config.startUrl || 'https://browserleaks.com/canvas'
+        url: config.startUrl || 'https://channels.weixin.qq.com/platform/post/create'
       };
 
       this.instances.set(accountId, instance);
@@ -81,7 +127,9 @@ export class WindowManager {
 
   private async launchRealChrome(accountId: string, fingerprintConfig: FingerprintConfig, config: AccountConfig) {
     const userDataDir = path.join(os.tmpdir(), 'chrome-profiles', accountId);
-    const debugPort = 9222 + (WindowManager.instanceCounter % 1000); // 动态分配调试端口
+
+    // 🔧 修改：使用动态端口分配
+    const debugPort = await this.findAvailableDebugPort();
     WindowManager.instanceCounter++;
 
     // 确保用户数据目录存在
@@ -100,10 +148,7 @@ export class WindowManager {
       `--remote-debugging-port=${debugPort}`,
       '--no-first-run',
       '--no-default-browser-check',
-      //'--disable-web-security', // 允许脚本注入
       '--disable-features=VizDisplayCompositor',
-      //'--disable-extensions',
-      //'--disable-plugins',
       '--disable-dev-shm-usage',
       `--window-size=${fingerprintConfig.screen.width},${fingerprintConfig.screen.height}`,
       `--user-agent=${this.generateUserAgent(fingerprintConfig)}`,
@@ -119,14 +164,16 @@ export class WindowManager {
       chromeArgs.push(`--lang=${fingerprintConfig.navigator.language}`);
     }
 
-    // 启动URL
-    const startUrl = config.startUrl || 'about:blank';
+    // 🔧 修改：默认打开微信视频号页面
+    const startUrl = config.startUrl || 'https://channels.weixin.qq.com/platform/post/create';
     chromeArgs.push(startUrl);
 
     // 查找Chrome可执行文件路径
     const chromePath = this.findChromePath();
 
-    console.log(`[WindowManager] Launching Chrome with args:`, chromeArgs.slice(0, 5), '...'); // 只显示前几个参数
+    console.log(`[WindowManager] Launching Chrome with debug port ${debugPort}`);
+    console.log(`[WindowManager] Starting URL: ${startUrl}`);
+    console.log(`[WindowManager] Chrome args:`, chromeArgs.slice(0, 5), '...');
 
     // 启动Chrome进程
     const chromeProcess = spawn(chromePath, chromeArgs, {
@@ -136,11 +183,17 @@ export class WindowManager {
 
     // 监听进程输出（用于调试）
     chromeProcess.stdout?.on('data', (data) => {
-      console.log(`[Chrome-${accountId}] stdout:`, data.toString().substring(0, 100) + '...');
+      const output = data.toString();
+      if (output.includes('DevTools listening')) {
+        console.log(`[Chrome-${accountId}] ${output.trim()}`);
+      }
     });
 
     chromeProcess.stderr?.on('data', (data) => {
-      console.log(`[Chrome-${accountId}] stderr:`, data.toString().substring(0, 100) + '...');
+      const output = data.toString();
+      if (output.includes('DevTools listening') || output.includes('Chrome started')) {
+        console.log(`[Chrome-${accountId}] ${output.trim()}`);
+      }
     });
 
     // 等待Chrome启动
@@ -183,7 +236,7 @@ export class WindowManager {
     throw new Error(`Chrome not found on ${platform}. Please install Google Chrome.`);
   }
 
-  private async waitForChromeReady(port: number, timeout = 10000): Promise<void> {
+  private async waitForChromeReady(port: number, timeout = 15000): Promise<void> {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
@@ -197,7 +250,7 @@ export class WindowManager {
         // Chrome还没准备好，继续等待
       }
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     throw new Error(`Chrome failed to start on port ${port} within ${timeout}ms`);
@@ -218,6 +271,7 @@ export class WindowManager {
   console.log('[Chrome-Injection] 配置已设置，等待preload脚本处理');
   console.log('[Chrome-Injection] 账号:', '${accountId}');
   console.log('[Chrome-Injection] 平台:', '${fingerprintConfig.navigator.platform}');
+  console.log('[Chrome-Injection] 调试端口范围: 9711+');
   
   // 触发事件通知preload脚本
   if (window.electronAPI && window.electronAPI.forceReinject) {

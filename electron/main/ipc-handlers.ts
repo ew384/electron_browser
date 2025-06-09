@@ -1,12 +1,10 @@
 import { ipcMain, BrowserWindow } from 'electron';
-import { WindowManager } from './window-manager';
 import { FingerprintGenerator } from './fingerprint/generator';
 import { FingerprintValidator } from './fingerprint/validator';
 import { AccountStorage } from './storage/account-storage';
 import { FingerprintConfig, BrowserAccount, AccountConfig } from '../shared/types';
-
-const windowManager = new WindowManager();
-const accountStorage = new AccountStorage();
+import { windowManager, accountStorage } from './index';
+console.log('[IPC-Handlers] 使用共享的 windowManager 和 accountStorage 实例');
 
 // 账号管理
 ipcMain.handle('create-account', async (event, account: BrowserAccount) => {
@@ -56,6 +54,7 @@ ipcMain.handle('create-account', async (event, account: BrowserAccount) => {
 
 ipcMain.handle('get-accounts', async () => {
   try {
+    console.log('[IPC] get-accounts called, using shared windowManager');
     const accounts = await accountStorage.getAllAccounts();
 
     // 同步实例状态和端口信息
@@ -76,6 +75,13 @@ ipcMain.handle('get-accounts', async () => {
         account.debugPort = undefined;
       }
     }
+
+    console.log('[IPC] Returning accounts with synced status:', accounts.map(acc => ({
+      id: acc.id,
+      name: acc.name,
+      status: acc.status,
+      debugPort: acc.debugPort
+    })));
 
     return { success: true, accounts };
   } catch (error: any) {
@@ -195,6 +201,8 @@ ipcMain.handle('get-browser-instances', async () => {
       debugPort: windowManager.getChromeDebugPort(instance.accountId)
     }));
 
+    console.log('[IPC] get-browser-instances returning:', instancesWithPorts);
+
     return { success: true, instances: instancesWithPorts };
   } catch (error: any) {
     return { success: false, error: error.message, instances: [] };
@@ -219,7 +227,6 @@ ipcMain.handle('get-chrome-debug-port', async (event, accountId: string) => {
     return { success: false, error: error.message };
   }
 });
-
 // 新增：获取所有运行实例的端口信息
 ipcMain.handle('get-all-debug-ports', async () => {
   try {
@@ -252,7 +259,7 @@ ipcMain.handle('get-fingerprint-config', async (event) => {
     console.log('[IPC] Getting fingerprint config for window:', window.id);
 
     // 方法1: 通过窗口ID查找配置
-    const config = (WindowManager as any).getFingerprintConfigForWindow(window.id);
+    const config = (windowManager as any).getFingerprintConfigForWindow(window.id);
     if (config) {
       console.log('[IPC] Found fingerprint config via window ID');
       return { success: true, config };
@@ -290,7 +297,7 @@ ipcMain.handle('get-window-fingerprint-config', async (event) => {
     console.log('[IPC] Direct window fingerprint config request for window:', window.id);
 
     // 直接从 WindowManager 获取
-    const config = (WindowManager as any).getFingerprintConfigForWindow(window.id);
+    const config = (windowManager as any).getFingerprintConfigForWindow(window.id);
 
     if (config) {
       console.log('[IPC] Successfully retrieved window fingerprint config');
@@ -422,7 +429,7 @@ ipcMain.handle('debug-fingerprint-status', async (event) => {
   }
 });
 
-console.log('[IPC] ✅ All IPC handlers registered successfully');
+console.log('[IPC-Handlers] ✅ All IPC handlers registered successfully with shared instances');
 
 // 调试相关的 IPC 处理器
 ipcMain.handle('debug-window-info', async (event) => {
@@ -512,7 +519,7 @@ ipcMain.handle('debug-fingerprint-detailed', async (event) => {
       debugInfo.fingerprintFromWindowManager = windowManager.getFingerprintConfig(currentInstance.accountId);
       // 尝试访问静态方法
       try {
-        debugInfo.fingerprintFromStaticMap = (WindowManager as any).getFingerprintConfigForWindow(window.id);
+        debugInfo.fingerprintFromStaticMap = (windowManager as any).getFingerprintConfigForWindow(window.id);
       } catch (e) {
         debugInfo.fingerprintFromStaticMap = 'Error accessing static method: ' + e;
       }
@@ -525,35 +532,3 @@ ipcMain.handle('debug-fingerprint-detailed', async (event) => {
   }
 });
 
-ipcMain.handle('debug-force-set-fingerprint', async (event) => {
-  try {
-    const webContents = event.sender;
-    const window = BrowserWindow.fromWebContents(webContents);
-
-    if (!window) {
-      return { success: false, error: 'No window context' };
-    }
-
-    // 生成一个测试指纹配置
-    const testConfig = FingerprintGenerator.generateFingerprint('debug-test-' + window.id);
-
-    // 强制设置到静态 Map 中
-    (WindowManager as any).windowFingerprintMap = (WindowManager as any).windowFingerprintMap || new Map();
-    (WindowManager as any).windowFingerprintMap.set(window.id, testConfig);
-
-    console.log('[Debug] Force set fingerprint for window', window.id);
-
-    // 通知 preload 脚本重新注入
-    webContents.send('fingerprint-config-updated', testConfig);
-
-    return {
-      success: true,
-      windowId: window.id,
-      configSet: true,
-      platform: testConfig.navigator.platform,
-      language: testConfig.navigator.language
-    };
-  } catch (error: any) {
-    return { success: false, error: error.message };
-  }
-});
