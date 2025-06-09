@@ -40,7 +40,6 @@
 ├── data
 ├── electron
 │   ├── main
-│   │   ├── debug-handlers.ts
 │   │   ├── fingerprint
 │   │   │   ├── generator.ts
 │   │   │   └── validator.ts
@@ -333,4 +332,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-110 directories, 223 files
+110 directories, 222 files
