@@ -1,3 +1,4 @@
+<!-- eslint-disable -->
 <template>
   <div class="browser-container">
     <!-- 调试信息 -->
@@ -6,7 +7,7 @@
       <p>浏览器数量: {{ browserList.length }}</p>
       <p>最后更新: {{ lastUpdateTime }}</p>
     </div>
-
+  
     <!-- 工具栏 -->
     <div class="toolbar">
       <el-button type="primary" icon="el-icon-plus" @click="showCreateDialog">
@@ -17,14 +18,9 @@
       </el-button>
       <el-button icon="el-icon-bug" @click="toggleDebug">调试模式</el-button>
     </div>
-
+  
     <!-- 浏览器列表 -->
-    <el-table
-      v-loading="loading"
-      :data="browserList"
-      style="width: 100%"
-      @row-dblclick="handleRowDblClick"
-    >
+    <el-table v-loading="loading" :data="browserList" style="width: 100%" @row-dblclick="handleRowDblClick">
       <el-table-column prop="id" label="ID" width="200" />
       <el-table-column prop="name" :label="$t('browser.name')" />
       <el-table-column prop="group" :label="$t('browser.group')" width="150">
@@ -40,6 +36,17 @@
           </el-tag>
         </template>
       </el-table-column>
+      <!-- 新增：端口列 -->
+      <el-table-column label="Port" width="100">
+        <template slot-scope="scope">
+          <span v-if="scope.row.status === 'running' && scope.row.debugPort" @click="copyPort(scope.row.debugPort)"
+            style="color: #409eff; cursor: pointer; font-family: monospace;">
+            {{ scope.row.debugPort }}
+          </span>
+          <span v-else-if="scope.row.status === 'running'" style="color: #e6a23c;">获取中...</span>
+          <span v-else style="color: #909399;">-</span>
+        </template>
+      </el-table-column>
       <el-table-column :label="$t('browser.fingerprint')" width="120">
         <template slot-scope="scope">
           <el-button type="text" size="small" @click="showFingerprintDialog(scope.row)">
@@ -49,12 +56,7 @@
       </el-table-column>
       <el-table-column :label="$t('browser.actions')" width="300" fixed="right">
         <template slot-scope="scope">
-          <el-button
-            v-if="scope.row.status !== 'running'"
-            type="primary"
-            size="small"
-            @click="launchBrowser(scope.row)"
-          >
+          <el-button v-if="scope.row.status !== 'running'" type="primary" size="small" @click="launchBrowser(scope.row)">
             {{ $t('browser.launch') }}
           </el-button>
           <el-button v-else type="danger" size="small" @click="closeBrowser(scope.row)">
@@ -69,37 +71,23 @@
         </template>
       </el-table-column>
     </el-table>
-
+  
     <!-- 创建/编辑对话框 -->
-    <el-dialog
-      :title="editMode ? $t('browser.edit') : $t('browser.create')"
-      :visible.sync="dialogVisible"
-      width="600px"
-    >
+    <el-dialog :title="editMode ? $t('browser.edit') : $t('browser.create')" :visible.sync="dialogVisible" width="600px">
       <el-form ref="browserForm" :model="browserForm" :rules="rules" label-width="120px">
         <el-form-item :label="$t('browser.name')" prop="name">
           <el-input v-model="browserForm.name" />
         </el-form-item>
         <el-form-item :label="$t('browser.group')">
           <el-select v-model="browserForm.group" clearable>
-            <el-option
-              v-for="group in groupList"
-              :key="group.id"
-              :label="group.name"
-              :value="group.name"
-            />
+            <el-option v-for="group in groupList" :key="group.id" :label="group.name" :value="group.name" />
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('browser.proxy')">
           <el-input v-model="browserForm.proxy" placeholder="http://127.0.0.1:8080" />
         </el-form-item>
         <el-form-item :label="$t('browser.userAgent')">
-          <el-input
-            v-model="browserForm.userAgent"
-            type="textarea"
-            :rows="3"
-            placeholder="留空使用默认值"
-          />
+          <el-input v-model="browserForm.userAgent" type="textarea" :rows="3" placeholder="留空使用默认值" />
         </el-form-item>
       </el-form>
       <div slot="footer">
@@ -107,13 +95,9 @@
         <el-button type="primary" @click="saveBrowser">{{ $t('common.save') }}</el-button>
       </div>
     </el-dialog>
-
+  
     <!-- 指纹详情对话框 -->
-    <el-dialog
-      :title="$t('browser.fingerprintDetails')"
-      :visible.sync="fingerprintDialogVisible"
-      width="800px"
-    >
+    <el-dialog :title="$t('browser.fingerprintDetails')" :visible.sync="fingerprintDialogVisible" width="800px">
       <pre v-if="currentFingerprint">{{ JSON.stringify(currentFingerprint, null, 2) }}</pre>
       <div slot="footer">
         <el-button @click="fingerprintDialogVisible = false">{{ $t('common.close') }}</el-button>
@@ -200,6 +184,9 @@ export default {
           this.browserList = result.accounts || []
           this.lastUpdateTime = new Date().toLocaleTimeString()
           console.log('[BrowserList] Browser list updated:', this.browserList.length)
+
+          // 新增：获取端口信息
+          await this.updatePorts()
         } else {
           console.error('[BrowserList] Failed to get accounts:', result?.error)
           this.$message.error('获取浏览器列表失败: ' + (result?.error || 'Unknown error'))
@@ -279,12 +266,16 @@ export default {
         }
 
         console.log('[BrowserList] Launching browser:', browser.id)
-        const result = await window.electronAPI.launchBrowser(browser.id)
+        const result = await window.electronAPI.launchBrowser(browser.id, {})
         console.log('[BrowserList] Launch result:', result)
 
         if (result && result.success) {
           this.$message.success('浏览器启动成功')
           browser.status = 'running'
+          // 获取端口信息
+          setTimeout(async () => {
+            await this.updatePorts()
+          }, 1000)
         } else {
           console.error('[BrowserList] Launch failed:', result?.error)
           this.$message.error('启动失败: ' + (result?.error || 'Unknown error'))
@@ -306,6 +297,8 @@ export default {
         if (result && result.success) {
           this.$message.success('浏览器已关闭')
           browser.status = 'idle'
+          // 清除端口信息
+          this.$set(browser, 'debugPort', undefined)
         } else {
           this.$message.error('关闭失败: ' + (result?.error || 'Unknown error'))
         }
@@ -373,6 +366,34 @@ export default {
         }
       } catch (error) {
         this.$message.error('生成指纹失败: ' + error.message)
+      }
+    },
+
+    // 新增：复制端口号
+    copyPort(port) {
+      navigator.clipboard
+        .writeText(port.toString())
+        .then(() => {
+          this.$message.success(`端口 ${port} 已复制`)
+        })
+        .catch(() => {
+          this.$message.error('复制失败')
+        })
+    },
+
+    // 新增：获取端口信息
+    async updatePorts() {
+      for (const browser of this.browserList) {
+        if (browser.status === 'running' && !browser.debugPort) {
+          try {
+            const result = await window.electronAPI.getChromeDebugPort(browser.id)
+            if (result?.success && result.port) {
+              this.$set(browser, 'debugPort', result.port)
+            }
+          } catch (error) {
+            console.error('获取端口失败:', error)
+          }
+        }
       }
     }
   }

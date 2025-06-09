@@ -4,11 +4,11 @@ import { FileUploader } from './file-uploader.js'
 export class WorkflowEngine {
     constructor(config) {
         this.config = config
-        console.log('⚙️ WorkflowEngine 初始化完成 (修复版本)')
+        console.log('⚙️ WorkflowEngine 初始化完成 ')
     }
 
     async execute(session, workflowType, renderData, pageAnalysis) {
-        console.log(`🔄 执行 ${workflowType} 工作流 (修复版本)`)
+        console.log(`🔄 执行 ${workflowType} 工作流`)
 
         const steps = []
         const fileUploader = new FileUploader(session)
@@ -497,18 +497,136 @@ export class WorkflowEngine {
         return result.result.value
     }
 
-    // 自动发布方法 (等待按钮激活)
-    async autoPublish(session) {
-        console.log('🎯 执行自动发布 (等待按钮激活)...')
+    async waitForPublishButton(session) {
+        console.log('⏳ 等待发表按钮激活和视频上传完成...')
 
-        // 首先等待发表按钮变为可用状态
-        const buttonReady = await this.waitForPublishButton(session)
-        if (!buttonReady.success) {
-            return buttonReady
+        const maxWaitTime = 60000 // 60秒
+        const checkInterval = 2000 // 2秒检查一次
+        const startTime = Date.now()
+
+        while (Date.now() - startTime < maxWaitTime) {
+            try {
+                const status = await this.checkPublishReadiness(session)
+
+                if (status.ready) {
+                    console.log('✅ 发表按钮已激活且视频上传完成')
+                    return {
+                        success: true,
+                        waitTime: Date.now() - startTime
+                    }
+                }
+
+                // 状态日志
+                const waitTime = Math.round((Date.now() - startTime) / 1000)
+                console.log(`⏳ 等待中... (${waitTime}s)`)
+                console.log(`   按钮状态: ${status.buttonReady ? '✅激活' : '❌未激活'}`)
+                console.log(`   视频状态: ${status.videoReady ? '✅完成' : '⏳上传中'}`)
+
+                await new Promise(resolve => setTimeout(resolve, checkInterval))
+
+            } catch (error) {
+                console.log(`⚠️ 检查状态失败: ${error.message}`)
+                await new Promise(resolve => setTimeout(resolve, checkInterval))
+            }
         }
 
-        console.log('✅ 发表按钮已激活，开始发布...')
+        console.log('❌ 等待超时')
+        return {
+            success: false,
+            error: '等待超时：发表按钮激活或视频上传未完成',
+            waitTime: maxWaitTime
+        }
+    }
 
+    // 检查发布准备状态（模块化）
+    async checkPublishReadiness(session) {
+        const result = await session.chromeController.executeScript(session, `
+            (function() {
+                try {
+                    const iframe = document.querySelector('iframe');
+                    if (!iframe || !iframe.contentDocument) {
+                        return { ready: false, error: '无法访问iframe' };
+                    }
+                    
+                    const iframeDoc = iframe.contentDocument;
+                    
+                    // 1. 检查发表按钮状态
+                    const buttonReady = this.isPublishButtonReady(iframeDoc);
+                    
+                    // 2. 检查视频上传状态（基于删除按钮）
+                    const videoReady = this.isVideoUploadComplete(iframeDoc);
+                    
+                    return {
+                        ready: buttonReady && videoReady,
+                        buttonReady: buttonReady,
+                        videoReady: videoReady
+                    };
+                    
+                } catch (e) {
+                    return { ready: false, error: e.message };
+                }
+            }.bind({
+                // 检查发表按钮是否准备好
+                isPublishButtonReady: function(iframeDoc) {
+                    // 查找发表按钮
+                    const buttons = iframeDoc.querySelectorAll('button');
+                    for (let button of buttons) {
+                        const buttonText = button.textContent.trim();
+                        if (buttonText === '发表' || buttonText === '发布') {
+                            return !button.disabled && !button.className.includes('disabled');
+                        }
+                    }
+                    return false;
+                },
+                
+                // 检查视频是否上传完成（基于删除按钮）
+                isVideoUploadComplete: function(iframeDoc) {
+                    // 查找删除按钮，如果存在说明视频上传完成
+                    const deleteButton = iframeDoc.querySelector('.finder-tag-wrap .tag-inner');
+                    if (deleteButton && deleteButton.textContent.trim() === '删除') {
+                        return true;
+                    }
+                    return false;
+                }
+            }))()
+        `)
+
+        return result.result.value
+    }
+
+    // 自动发布方法（简化版）
+    async autoPublish(session) {
+        console.log('🎯 执行自动发布...')
+
+        // 等待条件满足
+        const readyResult = await this.waitForPublishButton(session)
+        if (!readyResult.success) {
+            return readyResult
+        }
+
+        console.log('✅ 开始发布...')
+
+        // 点击发表按钮
+        const publishResult = await this.clickPublishButton(session)
+        if (!publishResult.success) {
+            return publishResult
+        }
+
+        // 等待发布处理
+        await new Promise(resolve => setTimeout(resolve, 3000))
+
+        // 检查发布状态
+        const publishStatus = await this.checkPublishStatus(session)
+
+        return {
+            success: true,
+            publishStatus: publishStatus,
+            waitTime: readyResult.waitTime
+        }
+    }
+
+    // 点击发表按钮（模块化）
+    async clickPublishButton(session) {
         const script = `
             (function() {
                 try {
@@ -519,30 +637,14 @@ export class WorkflowEngine {
                     
                     const iframeDoc = iframe.contentDocument;
                     
-                    // 更精确地查找发表按钮
+                    // 查找发表按钮
                     let publishButton = null;
-                    
-                    // 方法1: 通过文本内容查找 "发表" 按钮
                     const buttons = iframeDoc.querySelectorAll('button');
                     for (let button of buttons) {
                         const buttonText = button.textContent.trim();
-                        if (buttonText === '发表') {
+                        if (buttonText === '发表' || buttonText === '发布') {
                             publishButton = button;
-                            console.log('通过文本找到发表按钮:', buttonText, button.className);
                             break;
-                        }
-                    }
-                    
-                    // 方法2: 如果没找到，尝试其他选择器
-                    if (!publishButton) {
-                        const primaryButtons = iframeDoc.querySelectorAll('button.weui-desktop-btn_primary');
-                        for (let button of primaryButtons) {
-                            const buttonText = button.textContent.trim();
-                            if (buttonText === '发表' || buttonText === '发布') {
-                                publishButton = button;
-                                console.log('通过主要按钮样式找到:', buttonText, button.className);
-                                break;
-                            }
                         }
                     }
                     
@@ -550,37 +652,20 @@ export class WorkflowEngine {
                         return { success: false, error: '未找到发表按钮' };
                     }
                     
-                    console.log('找到发表按钮:', publishButton.textContent.trim(), publishButton.className);
-                    
-                    // 再次检查按钮是否可用
                     if (publishButton.disabled) {
-                        return { success: false, error: '发表按钮仍然不可用' };
+                        return { success: false, error: '发表按钮已禁用' };
                     }
                     
-                    // 滚动到按钮位置
+                    // 滚动到按钮并点击
                     publishButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    publishButton.focus();
+                    publishButton.click();
                     
-                    // 等待一下确保滚动完成
-                    setTimeout(() => {
-                        // 点击发表按钮
-                        publishButton.focus();
-                        publishButton.click();
-                        
-                        // 触发额外的点击事件
-                        const clickEvent = new MouseEvent('click', {
-                            bubbles: true,
-                            cancelable: true,
-                            view: iframeDoc.defaultView
-                        });
-                        publishButton.dispatchEvent(clickEvent);
-                        
-                        console.log('已点击发表按钮');
-                    }, 500);
+                    console.log('✅ 已点击发表按钮');
                     
                     return {
                         success: true,
-                        buttonText: publishButton.textContent.trim(),
-                        buttonClass: publishButton.className
+                        buttonText: publishButton.textContent.trim()
                     };
                     
                 } catch (e) {
@@ -590,144 +675,10 @@ export class WorkflowEngine {
         `
 
         const result = await session.chromeController.executeScript(session, script)
-
-        // 等待发布处理
-        await new Promise(resolve => setTimeout(resolve, 3000))
-
-        // 检查发布状态
-        const publishStatus = await this.checkPublishStatus(session)
-
-        return {
-            ...result.result.value,
-            publishStatus: publishStatus
-        }
+        return result.result.value
     }
 
-    // 等待发表按钮激活
-    async waitForPublishButton(session) {
-        console.log('⏳ 等待发表按钮激活...')
-
-        const maxWaitTime = 30000 // 最大等待30秒
-        const checkInterval = 1000 // 每秒检查一次
-        const startTime = Date.now()
-
-        while (Date.now() - startTime < maxWaitTime) {
-            try {
-                const buttonStatus = await session.chromeController.executeScript(session, `
-                    (function() {
-                        try {
-                            const iframe = document.querySelector('iframe');
-                            if (!iframe || !iframe.contentDocument) {
-                                return { ready: false, error: '无法访问iframe' };
-                            }
-                            
-                            const iframeDoc = iframe.contentDocument;
-                            
-                            // 更精确地查找发表按钮
-                            let publishButton = null;
-                            
-                            // 方法1: 通过文本内容查找 "发表" 按钮
-                            const buttons = iframeDoc.querySelectorAll('button');
-                            for (let button of buttons) {
-                                const buttonText = button.textContent.trim();
-                                if (buttonText === '发表') {
-                                    publishButton = button;
-                                    console.log('通过文本找到发表按钮:', buttonText, button.className);
-                                    break;
-                                }
-                            }
-                            
-                            // 方法2: 如果没找到，尝试其他选择器
-                            if (!publishButton) {
-                                // 查找所有主要按钮，过滤掉"保存草稿"等
-                                const primaryButtons = iframeDoc.querySelectorAll('button.weui-desktop-btn_primary');
-                                for (let button of primaryButtons) {
-                                    const buttonText = button.textContent.trim();
-                                    if (buttonText === '发表' || buttonText === '发布') {
-                                        publishButton = button;
-                                        console.log('通过主要按钮样式找到:', buttonText, button.className);
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            // 如果还是没找到，列出所有按钮帮助调试
-                            if (!publishButton) {
-                                const allButtons = [];
-                                for (let button of buttons) {
-                                    allButtons.push({
-                                        text: button.textContent.trim(),
-                                        className: button.className,
-                                        disabled: button.disabled
-                                    });
-                                }
-                                
-                                return { 
-                                    ready: false, 
-                                    error: '未找到发表按钮',
-                                    allButtons: allButtons
-                                };
-                            }
-                            
-                            const isDisabled = publishButton.disabled;
-                            const buttonText = publishButton.textContent.trim();
-                            const hasDisabledClass = publishButton.className.includes('disabled');
-                            
-                            // 检查按钮是否可用
-                            const isReady = !isDisabled && !hasDisabledClass && (buttonText === '发表' || buttonText === '发布');
-                            
-                            return {
-                                ready: isReady,
-                                disabled: isDisabled,
-                                hasDisabledClass: hasDisabledClass,
-                                buttonText: buttonText,
-                                className: publishButton.className
-                            };
-                            
-                        } catch (e) {
-                            return { ready: false, error: e.message };
-                        }
-                    })()
-                `)
-
-                const status = buttonStatus.result.value
-
-                if (status.ready) {
-                    console.log('✅ 发表按钮已激活')
-                    return { success: true, waitTime: Date.now() - startTime }
-                }
-
-                if (status.error) {
-                    console.log(`⚠️ 检查按钮状态时出错: ${status.error}`)
-                    if (status.allButtons) {
-                        console.log('📋 页面中所有按钮:')
-                        status.allButtons.forEach((btn, index) => {
-                            console.log(`   [${index}] "${btn.text}" - ${btn.className} - disabled: ${btn.disabled}`)
-                        })
-                    }
-                } else {
-                    const waitTime = Math.round((Date.now() - startTime) / 1000)
-                    console.log(`⏳ 等待中... (${waitTime}s) - 按钮状态: disabled=${status.disabled}, text="${status.buttonText}"`)
-                }
-
-                // 等待下一次检查
-                await new Promise(resolve => setTimeout(resolve, checkInterval))
-
-            } catch (error) {
-                console.log(`⚠️ 检查按钮状态失败: ${error.message}`)
-                await new Promise(resolve => setTimeout(resolve, checkInterval))
-            }
-        }
-
-        console.log('❌ 等待发表按钮激活超时')
-        return {
-            success: false,
-            error: '等待发表按钮激活超时',
-            waitTime: maxWaitTime
-        }
-    }
-
-    // 检查发布状态
+    // 检查发布状态（保持原有逻辑）
     async checkPublishStatus(session) {
         console.log('📊 检查发布状态...')
 
@@ -741,7 +692,7 @@ export class WorkflowEngine {
                     
                     const iframeDoc = iframe.contentDocument;
                     
-                    // 检查是否有成功提示
+                    // 检查成功提示
                     const successSelectors = [
                         '.success-message',
                         '.toast-success', 
@@ -759,29 +710,13 @@ export class WorkflowEngine {
                         }
                     }
                     
-                    // 检查页面是否跳转（发布成功通常会跳转）
+                    // 检查页面跳转
                     const currentUrl = window.location.href;
                     if (currentUrl.includes('success') || currentUrl.includes('complete')) {
                         return {
                             status: 'success',
                             message: '页面已跳转，发布可能成功'
                         };
-                    }
-                    
-                    // 检查发表按钮是否还存在且可用
-                    const publishButton = iframeDoc.querySelector('button.weui-desktop-btn_primary');
-                    if (publishButton && publishButton.textContent.trim() === '发表') {
-                        if (publishButton.disabled) {
-                            return {
-                                status: 'processing',
-                                message: '发表按钮已禁用，可能正在处理'
-                            };
-                        } else {
-                            return {
-                                status: 'ready',
-                                message: '发表按钮仍可用，可能需要再次点击'
-                            };
-                        }
                     }
                     
                     return {

@@ -40,6 +40,7 @@ ipcMain.handle('create-account', async (event, account: BrowserAccount) => {
     // 设置默认状态
     account.status = account.status || 'idle';
     account.createdAt = account.createdAt || Date.now();
+    account.debugPort = undefined; // 初始状态下没有端口
 
     console.log('[IPC] Saving account to storage:', account.id);
     // 保存到存储
@@ -57,13 +58,22 @@ ipcMain.handle('get-accounts', async () => {
   try {
     const accounts = await accountStorage.getAllAccounts();
 
-    // 同步实例状态
+    // 同步实例状态和端口信息
     for (const account of accounts) {
       const instance = windowManager.getInstance(account.id);
       if (instance) {
         account.status = instance.status === 'running' ? 'running' : 'idle';
+
+        // 同步端口信息
+        if (account.status === 'running') {
+          const port = windowManager.getChromeDebugPort(account.id);
+          account.debugPort = port || undefined;
+        } else {
+          account.debugPort = undefined;
+        }
       } else {
         account.status = 'idle';
+        account.debugPort = undefined;
       }
     }
 
@@ -126,17 +136,28 @@ ipcMain.handle('create-browser-instance', async (event, accountId: string, confi
     // 创建浏览器实例
     const instance = await windowManager.createBrowserInstance(accountId, finalConfig);
 
-    // 更新账号状态
+    // 获取调试端口
+    const debugPort = windowManager.getChromeDebugPort(accountId);
+
+    // 更新账号状态和端口
     account.status = 'running';
+    account.debugPort = debugPort || undefined;
     await accountStorage.saveAccount(account);
 
     console.log('[IPC] Browser instance created successfully:', {
       accountId: instance.accountId,
       windowId: instance.windowId,
-      status: instance.status
+      status: instance.status,
+      debugPort: debugPort
     });
 
-    return { success: true, instance };
+    return {
+      success: true,
+      instance: {
+        ...instance,
+        debugPort: debugPort
+      }
+    };
   } catch (error: any) {
     console.error('[IPC] Failed to create browser instance:', error);
     return { success: false, error: error.message };
@@ -149,10 +170,11 @@ ipcMain.handle('close-browser-instance', async (event, accountId: string) => {
 
     await windowManager.closeInstance(accountId);
 
-    // 更新账号状态
+    // 更新账号状态，清除端口信息
     const account = await accountStorage.getAccount(accountId);
     if (account) {
       account.status = 'idle';
+      account.debugPort = undefined;
       await accountStorage.saveAccount(account);
     }
 
@@ -166,9 +188,53 @@ ipcMain.handle('close-browser-instance', async (event, accountId: string) => {
 ipcMain.handle('get-browser-instances', async () => {
   try {
     const instances = windowManager.getAllInstances();
-    return { success: true, instances };
+
+    // 为每个实例添加端口信息
+    const instancesWithPorts = instances.map(instance => ({
+      ...instance,
+      debugPort: windowManager.getChromeDebugPort(instance.accountId)
+    }));
+
+    return { success: true, instances: instancesWithPorts };
   } catch (error: any) {
     return { success: false, error: error.message, instances: [] };
+  }
+});
+
+// Chrome调试端口管理
+ipcMain.handle('get-chrome-debug-port', async (event, accountId: string) => {
+  try {
+    console.log('[IPC] Getting Chrome debug port for account:', accountId);
+
+    const port = windowManager.getChromeDebugPort(accountId);
+    if (port) {
+      console.log('[IPC] Found debug port:', port, 'for account:', accountId);
+      return { success: true, port };
+    } else {
+      console.warn('[IPC] No debug port found for account:', accountId);
+      return { success: false, error: 'Chrome instance not found or not running' };
+    }
+  } catch (error: any) {
+    console.error('[IPC] Error getting debug port:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 新增：获取所有运行实例的端口信息
+ipcMain.handle('get-all-debug-ports', async () => {
+  try {
+    const instances = windowManager.getAllInstances();
+    const portsInfo = instances.map(instance => ({
+      accountId: instance.accountId,
+      port: windowManager.getChromeDebugPort(instance.accountId),
+      status: instance.status
+    }));
+
+    console.log('[IPC] All debug ports info:', portsInfo);
+    return { success: true, ports: portsInfo };
+  } catch (error: any) {
+    console.error('[IPC] Error getting all debug ports:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -340,7 +406,8 @@ ipcMain.handle('debug-fingerprint-status', async (event) => {
       instanceFound: !!currentInstance,
       accountId: currentInstance?.accountId,
       totalInstances: instances.length,
-      fingerprintConfigExists: false
+      fingerprintConfigExists: false,
+      debugPort: currentInstance ? windowManager.getChromeDebugPort(currentInstance.accountId) : null
     };
 
     if (currentInstance) {
@@ -356,6 +423,7 @@ ipcMain.handle('debug-fingerprint-status', async (event) => {
 });
 
 console.log('[IPC] ✅ All IPC handlers registered successfully');
+
 // 调试相关的 IPC 处理器
 ipcMain.handle('debug-window-info', async (event) => {
   try {
@@ -387,7 +455,8 @@ ipcMain.handle('debug-window-info', async (event) => {
       isBrowserInstance: !!currentInstance,
       browserInstanceInfo: currentInstance ? {
         accountId: currentInstance.accountId,
-        status: currentInstance.status
+        status: currentInstance.status,
+        debugPort: windowManager.getChromeDebugPort(currentInstance.accountId)
       } : null,
       allWindows: allWindows.map(w => ({
         id: w.id,
@@ -397,7 +466,8 @@ ipcMain.handle('debug-window-info', async (event) => {
       allInstances: allInstances.map(inst => ({
         accountId: inst.accountId,
         windowId: inst.windowId,
-        status: inst.status
+        status: inst.status,
+        debugPort: windowManager.getChromeDebugPort(inst.accountId)
       }))
     };
 
@@ -426,12 +496,14 @@ ipcMain.handle('debug-fingerprint-detailed', async (event) => {
       windowUrl: window.webContents.getURL(),
       instanceFound: !!currentInstance,
       accountId: currentInstance?.accountId,
+      debugPort: currentInstance ? windowManager.getChromeDebugPort(currentInstance.accountId) : null,
       fingerprintFromWindowManager: null as any,
       fingerprintFromStaticMap: null as any,
       allInstancesCount: allInstances.length,
       allInstances: allInstances.map(inst => ({
         accountId: inst.accountId,
         windowId: inst.windowId,
+        debugPort: windowManager.getChromeDebugPort(inst.accountId),
         hasFingerprintConfig: !!windowManager.getFingerprintConfig(inst.accountId)
       }))
     };
@@ -482,25 +554,6 @@ ipcMain.handle('debug-force-set-fingerprint', async (event) => {
       language: testConfig.navigator.language
     };
   } catch (error: any) {
-    return { success: false, error: error.message };
-  }
-});
-
-// 获取Chrome调试端口（供外部ChromeDriver使用）
-ipcMain.handle('get-chrome-debug-port', async (event, accountId: string) => {
-  try {
-    console.log('[IPC] Getting Chrome debug port for account:', accountId);
-
-    const port = windowManager.getChromeDebugPort(accountId);
-    if (port) {
-      console.log('[IPC] Found debug port:', port, 'for account:', accountId);
-      return { success: true, port };
-    } else {
-      console.warn('[IPC] No debug port found for account:', accountId);
-      return { success: false, error: 'Chrome instance not found or not running' };
-    }
-  } catch (error: any) {
-    console.error('[IPC] Error getting debug port:', error);
     return { success: false, error: error.message };
   }
 });

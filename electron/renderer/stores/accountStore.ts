@@ -22,6 +22,10 @@ interface AccountStore {
   startInstance: (accountId: string, config?: AccountConfig) => Promise<void>;
   stopInstance: (accountId: string) => Promise<void>;
 
+  // 新增：端口管理
+  getDebugPort: (accountId: string) => Promise<number | null>;
+  updateAccountPort: (accountId: string, port: number | null) => void;
+
   // 预留扩展方法
   updateFingerprint: (accountId: string, fingerprint: any) => Promise<void>;
   updateProxy: (accountId: string, proxy: any) => Promise<void>;
@@ -47,7 +51,8 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
         id: `account_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         name: `账号 ${get().accounts.length + 1}`,
         status: 'idle',
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        debugPort: undefined // 初始状态下没有端口
       };
 
       set((state: AccountStore) => ({
@@ -102,7 +107,7 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
 
   // 启动实例
   startInstance: async (accountId: string, config?: AccountConfig) => {
-    const { updateAccount } = get();
+    const { updateAccount, getDebugPort } = get();
 
     try {
       updateAccount(accountId, { status: 'idle' });
@@ -111,13 +116,20 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
 
       if (response?.success) {
         updateAccount(accountId, { status: 'running' });
-        console.log('浏览器实例启动成功:', accountId);
+
+        // 获取并更新调试端口
+        const port = await getDebugPort(accountId);
+        if (port) {
+          updateAccount(accountId, { debugPort: port });
+        }
+
+        console.log('浏览器实例启动成功:', accountId, '端口:', port);
       } else {
         throw new Error(response?.error || '启动失败');
       }
 
     } catch (error) {
-      updateAccount(accountId, { status: 'error' });
+      updateAccount(accountId, { status: 'error', debugPort: undefined });
       set({ error: error instanceof Error ? error.message : '启动实例失败' });
       throw error;
     }
@@ -132,7 +144,10 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
       const response = await window.electronAPI?.closeBrowserInstance(accountId);
 
       if (response?.success) {
-        updateAccount(accountId, { status: 'idle' });
+        updateAccount(accountId, {
+          status: 'idle',
+          debugPort: undefined // 停止后清除端口信息
+        });
         console.log('浏览器实例停止成功:', accountId);
       } else {
         throw new Error(response?.error || '停止失败');
@@ -144,10 +159,35 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
     }
   },
 
+  // 新增：获取调试端口
+  getDebugPort: async (accountId: string): Promise<number | null> => {
+    try {
+      const response = await window.electronAPI?.getChromeDebugPort(accountId);
+
+      if (response?.success && response.port) {
+        return response.port;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('获取调试端口失败:', error);
+      return null;
+    }
+  },
+
+  // 新增：更新账号端口信息
+  updateAccountPort: (accountId: string, port: number | null) => {
+    const { updateAccount } = get();
+    updateAccount(accountId, { debugPort: port || undefined });
+  },
+
   // 预留扩展方法
   updateFingerprint: async (accountId: string, fingerprint: any) => {
     try {
-      const response = await window.electronAPI?.injectFingerprint(accountId, fingerprint);
+      if (!window.electronAPI?.injectFingerprint) {
+        throw new Error('injectFingerprint方法不可用');
+      }
+      const response = await window.electronAPI.injectFingerprint(accountId, fingerprint);
       if (!response?.success) {
         throw new Error(response?.error || '指纹更新失败');
       }
@@ -160,7 +200,10 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
 
   updateProxy: async (accountId: string, proxy: any) => {
     try {
-      const response = await window.electronAPI?.updateProxy(accountId, proxy);
+      if (!window.electronAPI?.updateProxy) {
+        throw new Error('updateProxy方法不可用');
+      }
+      const response = await window.electronAPI.updateProxy(accountId, proxy);
       if (!response?.success) {
         throw new Error(response?.error || '代理更新失败');
       }
@@ -173,7 +216,10 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
 
   executeBehavior: async (accountId: string, behavior: any) => {
     try {
-      const response = await window.electronAPI?.executeBehavior(accountId, behavior);
+      if (!window.electronAPI?.executeBehavior) {
+        throw new Error('executeBehavior方法不可用');
+      }
+      const response = await window.electronAPI.executeBehavior(accountId, behavior);
       if (!response?.success) {
         throw new Error(response?.error || '行为执行失败');
       }

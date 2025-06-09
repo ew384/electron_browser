@@ -4,6 +4,8 @@ export interface BrowserAccount {
   status: 'idle' | 'running' | 'error';
   createdAt: number;
   config?: AccountConfig;
+  debugPort?: number;
+  updatedAt?: number;
 }
 
 export interface BrowserInstance {
@@ -13,6 +15,7 @@ export interface BrowserInstance {
   pid?: number;
   url?: string;
   id?: string;
+  debugPort?: number;
 }
 
 export interface AccountConfig {
