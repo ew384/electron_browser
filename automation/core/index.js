@@ -1,5 +1,7 @@
+// automation/core/index.js - 精简版本
+// 移除复杂的抽象层，直接使用专门的发布器
+
 import { ChromeController } from './chrome-controller.js'
-import { WorkflowEngine } from './workflow-engine.js'
 import { ContentProcessor } from './content-processor.js'
 import { TemplateEngine } from './template-engine.js'
 import { MultiPlatformPublisher } from '../engines/multi-platform-engine.js'
@@ -8,8 +10,7 @@ import path from 'path'
 import fs from 'fs'
 
 /**
- * 多平台发布器 - 统一管理所有平台的自动化发布
- * 重构自原来的 WeChatPublisher，现在支持多平台并行发布
+ * 精简版发布器 - 直接调用专门的平台发布器
  */
 export class UniversalPublisher {
     constructor(options = {}) {
@@ -18,22 +19,19 @@ export class UniversalPublisher {
             timeout: options.timeout || 15000,
             retryAttempts: options.retryAttempts || 3,
             outputDir: options.outputDir || './output',
-            serverPort: options.serverPort || 3000,
             ...options
         }
 
         // 初始化核心组件
         this.chromeController = new ChromeController(this.config)
-        this.workflowEngine = new WorkflowEngine(this.config)
         this.contentProcessor = new ContentProcessor(this.config)
         this.templateEngine = new TemplateEngine(this.config)
 
-        // 初始化多平台发布引擎
+        // 初始化精简版多平台发布引擎
         this.multiPlatformEngine = new MultiPlatformPublisher()
-        this.multiPlatformEngine.initializePublishers()
 
         this.initOutputDir()
-        console.log('🚀 UniversalPublisher 初始化完成 (支持多平台)')
+        console.log('🚀 UniversalPublisher 初始化完成 (精简版)')
     }
 
     initOutputDir() {
@@ -43,18 +41,13 @@ export class UniversalPublisher {
     }
 
     /**
-     * 发布到单个平台
-     * @param {string} platformId - 平台ID (wechat, douyin, xiaohongshu, kuaishou)
-     * @param {string} workflowType - 工作流类型 (video, article, music, audio)
-     * @param {object} content - 内容数据
-     * @param {object} template - 模板配置
-     * @param {object} account - 账号配置
+     * 发布到单个平台 - 精简版本
      */
     async publish(platformId, workflowType, content, template, account) {
         console.log(`📱 开始发布 ${workflowType} 到 ${platformId} 平台: ${account.id}`)
 
         try {
-            // 1. 验证输入参数
+            // 1. 验证参数
             this.validateInput(platformId, workflowType, content, template)
 
             // 2. 处理内容
@@ -74,7 +67,7 @@ export class UniversalPublisher {
             const session = await this.chromeController.createSession(account)
             session.chromeController = this.chromeController
 
-            // 5. 使用多平台发布引擎执行
+            // 5. 直接使用多平台发布引擎
             const result = await this.multiPlatformEngine.publishToPlatform(
                 platformId,
                 session,
@@ -98,12 +91,7 @@ export class UniversalPublisher {
     }
 
     /**
-     * 多平台并行发布
-     * @param {Array} platforms - 平台ID数组
-     * @param {string} workflowType - 工作流类型
-     * @param {object} content - 内容数据
-     * @param {object} template - 模板配置
-     * @param {Array} accounts - 账号配置数组
+     * 多平台并行发布 - 精简版本
      */
     async publishMultiPlatform(platforms, workflowType, content, template, accounts) {
         console.log(`📦 批量发布 ${workflowType} 到 ${platforms.length} 个平台`)
@@ -114,6 +102,9 @@ export class UniversalPublisher {
                 throw new Error(`平台数量(${platforms.length})与账号数量(${accounts.length})不匹配`)
             }
 
+            // 处理内容
+            const processedContent = await this.contentProcessor.process(content, workflowType)
+
             // 创建浏览器会话
             const sessions = []
             for (let i = 0; i < accounts.length; i++) {
@@ -122,11 +113,14 @@ export class UniversalPublisher {
                 sessions.push(session)
             }
 
+            // 渲染模板（为每个账号生成不同的内容）
+            const renderData = await this.templateEngine.render(template, processedContent, accounts[0])
+
             // 使用多平台发布引擎执行
             const result = await this.multiPlatformEngine.publishToMultiplePlatforms(
                 platforms,
                 sessions,
-                content,
+                renderData,
                 content.videoFile || content.file
             )
 
@@ -146,10 +140,6 @@ export class UniversalPublisher {
 
     /**
      * 批量发布 (兼容原有接口)
-     * @param {string} workflowType - 工作流类型
-     * @param {object} content - 内容数据
-     * @param {object} template - 模板配置
-     * @param {Array} accounts - 账号配置数组
      */
     async batchPublish(workflowType, content, template, accounts) {
         console.log(`📦 批量发布 ${workflowType} 到 ${accounts.length} 个账号`)
@@ -162,6 +152,7 @@ export class UniversalPublisher {
                 // 获取账号对应的平台，默认为微信视频号
                 const platformId = account.platform || 'wechat'
 
+                // 为每个账号生成变化的内容
                 const variedContent = await this.contentProcessor.generateVariation(content, account)
                 const result = await this.publish(platformId, workflowType, variedContent, template, account)
 
@@ -285,10 +276,8 @@ export class UniversalPublisher {
     }
 }
 
-// 向后兼容：导出原来的 WeChatPublisher 名称
+// 向后兼容：导出原来的名称
 export const WeChatPublisher = UniversalPublisher
-
-// 导出多平台发布器 (推荐使用)
 export const MultiPlatformVideoPublisher = UniversalPublisher
 
 // 默认导出
@@ -297,7 +286,6 @@ export default UniversalPublisher
 // 导出其他核心组件
 export {
     ChromeController,
-    WorkflowEngine,
     ContentProcessor,
     TemplateEngine,
     MultiPlatformPublisher

@@ -1,296 +1,435 @@
-// Chrome 浏览器控制器 - 优化版本
+// automation/core/chrome-controller.js - 修复 WebSocket 问题
+// 在 Node.js 环境中使用 ws 库
+
 import WebSocket from 'ws'
-import fetch from 'node-fetch'
+import { getPlatformConfig } from '../config/platforms.js'
 
 export class ChromeController {
-    constructor(config) {
+    constructor(config = {}) {
         this.config = {
-            ...config,
-            timeout: config.timeout || 15000, // 增加超时时间
-            retryAttempts: config.retryAttempts || 3
+            debugPort: config.debugPort || 9225,
+            timeout: config.timeout || 15000,
+            retryAttempts: config.retryAttempts || 3,
+            ...config
         }
         this.sessions = new Map()
-        console.log('🌐 ChromeController 初始化完成 (优化版本)')
     }
-    
+
     async createSession(account) {
         console.log(`🔗 创建浏览器会话: ${account.id}`)
-        
+
         try {
-            // 获取现有标签页
-            const response = await fetch(`http://localhost:${this.config.debugPort}/json`)
-            const tabs = await response.json()
-            
-            // 查找微信视频号页面
-            let targetTab = tabs.find(tab => 
-                tab.url.includes('channels.weixin.qq.com') && tab.type === 'page'
-            )
-            
-            if (!targetTab) {
-                throw new Error('未找到微信视频号标签页，请先在浏览器中打开微信视频号页面')
+            // 使用账号中的 debugPort，如果没有则使用默认端口
+            const debugPort = account.debugPort || this.config.debugPort
+            console.log(`🔌 连接Chrome调试端口: ${debugPort}`)
+
+            // 1. 连接到Chrome调试端口
+            const response = await fetch(`http://localhost:${debugPort}/json`)
+            if (!response.ok) {
+                throw new Error(`无法连接到Chrome调试端口 ${debugPort}。请确保Chrome以调试模式启动：chrome --remote-debugging-port=${debugPort}`)
             }
-            
-            console.log(`✅ 找到目标页面: ${targetTab.title}`)
-            
+
+            const tabs = await response.json()
+            console.log(`📋 找到 ${tabs.length} 个浏览器标签页`)
+
+            // 2. 获取平台配置
+            const platformId = account.platform || 'wechat'
+            const platformConfig = getPlatformConfig(platformId)
+            if (!platformConfig) {
+                throw new Error(`不支持的平台: ${platformId}`)
+            }
+
+            // 3. 查找或创建目标页面
+            let targetTab = await this.findOrCreateTargetTab(tabs, platformConfig, account, debugPort)
+
+            // 4. 建立WebSocket连接
+            const wsUrl = targetTab.webSocketDebuggerUrl
+            const ws = await this.connectWebSocket(wsUrl)
+
+            // 5. 创建会话对象
             const session = {
                 id: account.id,
-                debugPort: this.config.debugPort,
+                platform: platformId,
+                platformConfig: platformConfig,
+                account: account,
+                debugPort: debugPort,
                 tabId: targetTab.id,
-                websocket: null,
-                account,
-                wsUrl: targetTab.webSocketDebuggerUrl,
-                messageQueue: [],
-                commandId: 1
+                webSocket: ws,
+                chromeController: this // 添加对自己的引用
             }
-            
-            // 建立WebSocket连接
-            await this.connectWebSocket(session)
-            
-            // 启用必要的Chrome DevTools域
-            await this.enableDomains(session)
-            
+
             this.sessions.set(account.id, session)
+
+            // 6. 启用必要的Chrome DevTools域
+            await this.enableDomains(session)
+
+            // 7. 导航到上传页面（如果需要）
+            await this.navigateToUploadPage(session)
+
+            console.log(`✅ 会话创建成功: ${account.id} (${platformConfig.name})`)
             return session
-            
+
         } catch (error) {
-            console.error('❌ 浏览器会话创建失败:', error.message)
+            console.error(`❌ 浏览器会话创建失败: ${error.message}`)
             throw error
         }
     }
-    
-    async connectWebSocket(session) {
-        console.log('🔗 建立WebSocket连接...')
-        
-        session.websocket = new WebSocket(session.wsUrl)
-        
-        // 设置消息处理器
-        session.websocket.on('message', (data) => {
-            try {
-                const message = JSON.parse(data)
-                session.messageQueue.push(message)
-                
-                // 保持最近100条消息
-                if (session.messageQueue.length > 100) {
-                    session.messageQueue.shift()
-                }
-            } catch (e) {
-                // 忽略解析错误
-            }
-        })
-        
-        session.websocket.on('error', (error) => {
-            console.error('WebSocket错误:', error.message)
-        })
-        
-        // 等待连接建立
-        await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error('WebSocket连接超时'))
-            }, 10000)
-            
-            session.websocket.on('open', () => {
-                clearTimeout(timeout)
-                console.log('✅ WebSocket连接成功')
-                resolve()
-            })
-            
-            session.websocket.on('error', (error) => {
-                clearTimeout(timeout)
-                reject(error)
-            })
-        })
-    }
-    
-    async enableDomains(session) {
-        console.log('🔧 启用Chrome DevTools域...')
-        
-        const domains = ['Runtime', 'Page', 'DOM']
-        
-        for (const domain of domains) {
-            try {
-                await this.sendCommand(session, `${domain}.enable`)
-                console.log(`   ✅ ${domain}.enable 成功`)
-            } catch (error) {
-                console.log(`   ⚠️ ${domain}.enable 失败: ${error.message}`)
-                // 继续尝试其他域
-            }
+
+    /**
+     * 查找或创建目标标签页
+     */
+    async findOrCreateTargetTab(tabs, platformConfig, account, debugPort) {
+        const uploadUrl = platformConfig.urls.upload
+        const loginUrl = platformConfig.urls.login
+        const dashboardUrl = platformConfig.urls.dashboard
+
+        // 1. 优先查找已存在的上传页面
+        let targetTab = tabs.find(tab =>
+            tab.url && (
+                tab.url.includes(uploadUrl) ||
+                tab.url.includes(this.extractDomain(uploadUrl)) // 匹配域名
+            )
+        )
+
+        if (targetTab) {
+            console.log(`📱 找到现有的${platformConfig.name}上传页面`)
+            return targetTab
         }
-    }
-    
-    async navigateToUploadPage(session, workflowType) {
-        const urls = {
-            video: 'https://channels.weixin.qq.com/platform/post/create',
-            article: 'https://channels.weixin.qq.com/platform/post/finderNewLifeCreate',
-            music: 'https://channels.weixin.qq.com/platform/post/createMusic',
-            audio: 'https://channels.weixin.qq.com/platform/post/createAudio'
+
+        // 2. 查找登录页面或仪表板页面
+        targetTab = tabs.find(tab =>
+            tab.url && (
+                tab.url.includes(this.extractDomain(loginUrl)) ||
+                tab.url.includes(this.extractDomain(dashboardUrl))
+            )
+        )
+
+        if (targetTab) {
+            console.log(`📱 找到现有的${platformConfig.name}页面，将导航到上传页面`)
+            return targetTab
         }
-        
-        const targetUrl = urls[workflowType]
-        console.log(`🔄 导航到 ${workflowType} 上传页面`)
-        console.log(`   目标URL: ${targetUrl}`)
-        
+
+        // 3. 查找空白标签页或新建标签页
+        targetTab = tabs.find(tab =>
+            !tab.url ||
+            tab.url === 'about:blank' ||
+            tab.url === 'chrome://newtab/' ||
+            tab.title === 'New Tab'
+        )
+
+        if (targetTab) {
+            console.log(`📱 找到空白标签页，将导航到${platformConfig.name}上传页面`)
+            return targetTab
+        }
+
+        // 4. 如果没有合适的标签页，创建新标签页
+        console.log(`📱 创建新标签页用于${platformConfig.name}`)
+        const newTabResponse = await fetch(`http://localhost:${debugPort}/json/new?${uploadUrl}`)
+        if (!newTabResponse.ok) {
+            throw new Error('无法创建新标签页')
+        }
+
+        const newTab = await newTabResponse.json()
+        console.log(`✅ 新标签页创建成功: ${newTab.id}`)
+
+        // 等待新标签页加载
+        await this.delay(2000)
+
+        return newTab
+    }
+
+    /**
+     * 提取域名的辅助方法
+     */
+    extractDomain(url) {
         try {
-            // 检查当前页面URL
-            const currentUrl = await this.getCurrentUrl(session)
-            console.log(`   当前URL: ${currentUrl}`)
-            
-            if (currentUrl === targetUrl) {
-                console.log('✅ 已在目标页面')
-                return true
-            }
-            
-            // 导航到目标页面
-            console.log('🔄 执行页面导航...')
-            await this.sendCommand(session, 'Page.navigate', { url: targetUrl })
-            
-            // 等待页面加载完成
-            await this.waitForPageLoad(session)
-            
-            console.log('✅ 页面导航成功')
-            return true
-            
+            const urlObj = new URL(url)
+            return urlObj.hostname
         } catch (error) {
-            console.error('⚠️ 页面导航失败:', error.message)
-            console.log('💡 请手动在浏览器中导航到目标页面')
-            return false
+            return url.split('/')[2] || url
         }
     }
-    
-    async getCurrentUrl(session) {
+
+    /**
+     * 建立WebSocket连接 - 使用 ws 库
+     */
+    async connectWebSocket(wsUrl) {
+        return new Promise((resolve, reject) => {
+            console.log(`🔌 建立WebSocket连接: ${wsUrl}`)
+
+            const ws = new WebSocket(wsUrl)
+
+            ws.on('open', () => {
+                console.log('🔌 WebSocket连接已建立')
+                resolve(ws)
+            })
+
+            ws.on('error', (error) => {
+                console.error('❌ WebSocket连接失败:', error.message)
+                reject(new Error(`WebSocket连接失败: ${error.message}`))
+            })
+
+            ws.on('close', () => {
+                console.log('🔌 WebSocket连接已关闭')
+            })
+
+            // 设置超时
+            setTimeout(() => {
+                if (ws.readyState !== WebSocket.OPEN) {
+                    ws.close()
+                    reject(new Error('WebSocket连接超时'))
+                }
+            }, this.config.timeout)
+        })
+    }
+
+    /**
+     * 启用Chrome DevTools域
+     */
+    async enableDomains(session) {
+        const domains = ['Runtime', 'Page', 'DOM', 'Network']
+
+        for (const domain of domains) {
+            await this.sendCommand(session, `${domain}.enable`)
+        }
+
+        console.log('🔧 Chrome DevTools域已启用')
+    }
+
+    /**
+     * 导航到上传页面
+     */
+    async navigateToUploadPage(session) {
+        const uploadUrl = session.platformConfig.urls.upload
+
         try {
-            const result = await this.sendCommand(session, 'Runtime.evaluate', {
+            // 获取当前页面URL
+            const currentUrlResult = await this.sendCommand(session, 'Runtime.evaluate', {
                 expression: 'window.location.href',
                 returnByValue: true
             })
-            return result.result.value
-        } catch (error) {
-            console.log('⚠️ 获取当前URL失败')
-            return null
-        }
-    }
-    
-    async waitForPageLoad(session) {
-        console.log('⏳ 等待页面加载完成...')
-        
-        try {
-            // 等待页面加载事件或超时
-            const startTime = Date.now()
-            const maxWait = 15000 // 15秒超时
-            
-            while (Date.now() - startTime < maxWait) {
-                try {
-                    const readyState = await this.sendCommand(session, 'Runtime.evaluate', {
-                        expression: 'document.readyState',
-                        returnByValue: true,
-                        timeout: 3000
-                    })
-                    
-                    if (readyState.result.value === 'complete') {
-                        console.log('✅ 页面加载完成')
-                        // 额外等待2秒确保动态内容加载
-                        await new Promise(resolve => setTimeout(resolve, 2000))
-                        return true
-                    }
-                    
-                    await new Promise(resolve => setTimeout(resolve, 1000))
-                } catch (error) {
-                    // 如果评估失败，继续等待
-                    await new Promise(resolve => setTimeout(resolve, 1000))
-                }
+
+            const currentUrl = currentUrlResult.result.value
+            console.log(`📍 当前页面: ${currentUrl}`)
+
+            // 检查是否已经在上传页面
+            if (currentUrl && (currentUrl.includes(uploadUrl) || currentUrl === uploadUrl)) {
+                console.log(`✅ 已在${session.platformConfig.name}上传页面`)
+                return true
             }
-            
-            console.log('⚠️ 页面加载超时，继续执行')
-            return false
-            
+
+            // 导航到上传页面
+            console.log(`🔄 导航到${session.platformConfig.name}上传页面: ${uploadUrl}`)
+            await this.sendCommand(session, 'Page.navigate', { url: uploadUrl })
+
+            // 等待页面加载完成
+            await this.waitForPageLoad(session)
+
+            console.log(`✅ 已导航到${session.platformConfig.name}上传页面`)
+            return true
+
         } catch (error) {
-            console.log('⚠️ 页面加载检查失败:', error.message)
-            return false
+            console.error(`❌ 导航失败: ${error.message}`)
+
+            // 如果导航失败，尝试通过JavaScript重定向
+            try {
+                console.log('🔄 尝试JavaScript重定向...')
+                await this.executeScript(session, `window.location.href = '${uploadUrl}'`)
+                await this.waitForPageLoad(session)
+                console.log('✅ JavaScript重定向成功')
+                return true
+            } catch (jsError) {
+                console.error(`❌ JavaScript重定向也失败: ${jsError.message}`)
+                throw new Error(`无法导航到上传页面: ${error.message}`)
+            }
         }
     }
-    
-    async sendCommand(session, method, params = {}) {
-        if (!session.websocket || session.websocket.readyState !== WebSocket.OPEN) {
-            throw new Error('WebSocket连接不可用')
-        }
-        
-        const commandId = session.commandId++
-        const message = JSON.stringify({ id: commandId, method, params })
-        
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error(`命令 ${method} 执行超时 (${this.config.timeout}ms)`))
-            }, this.config.timeout)
-            
-            // 监听响应
-            const checkResponse = () => {
-                const response = session.messageQueue.find(msg => msg.id === commandId)
-                if (response) {
-                    clearTimeout(timeout)
-                    
-                    if (response.error) {
-                        reject(new Error(`${method}: ${response.error.message}`))
-                    } else {
-                        resolve(response.result || {})
-                    }
+
+    /**
+     * 等待页面加载完成
+     */
+    async waitForPageLoad(session, timeout = 15000) {
+        console.log('⏳ 等待页面加载完成...')
+
+        const startTime = Date.now()
+
+        while (Date.now() - startTime < timeout) {
+            try {
+                // 检查文档状态
+                const readyStateResult = await this.sendCommand(session, 'Runtime.evaluate', {
+                    expression: 'document.readyState',
+                    returnByValue: true
+                })
+
+                const readyState = readyStateResult.result.value
+
+                if (readyState === 'complete') {
+                    // 额外等待确保动态内容加载
+                    await this.delay(3000) // 增加等待时间
+                    console.log('✅ 页面加载完成')
                     return true
                 }
-                return false
-            }
-            
-            // 立即检查是否已有响应
-            if (!checkResponse()) {
-                // 设置定期检查
-                const interval = setInterval(() => {
-                    if (checkResponse()) {
-                        clearInterval(interval)
-                    }
-                }, 100)
-                
-                // 清理定时器
-                setTimeout(() => {
-                    clearInterval(interval)
-                }, this.config.timeout)
-            }
-            
-            // 发送命令
-            try {
-                session.websocket.send(message)
+
+                console.log(`📄 页面状态: ${readyState}`)
+                await this.delay(1000)
+
             } catch (error) {
-                clearTimeout(timeout)
-                reject(new Error(`发送命令失败: ${error.message}`))
+                console.log(`⚠️ 检查页面状态失败: ${error.message}`)
+                await this.delay(1000)
             }
+        }
+
+        console.log('⚠️ 页面加载超时，但继续执行')
+        return false
+    }
+
+    /**
+     * 发送Chrome DevTools命令 - 适配 ws 库
+     */
+    async sendCommand(session, method, params = {}) {
+        return new Promise((resolve, reject) => {
+            const id = Date.now() + Math.random()
+            const command = {
+                id: id,
+                method: method,
+                params: params
+            }
+
+            const timeoutId = setTimeout(() => {
+                reject(new Error(`命令超时: ${method}`))
+            }, this.config.timeout)
+
+            const messageHandler = (data) => {
+                try {
+                    const message = JSON.parse(data.toString())
+
+                    if (message.id === id) {
+                        clearTimeout(timeoutId)
+                        session.webSocket.off('message', messageHandler)
+
+                        if (message.error) {
+                            reject(new Error(`Chrome DevTools错误: ${message.error.message}`))
+                        } else {
+                            resolve(message)
+                        }
+                    }
+                } catch (parseError) {
+                    console.error('消息解析错误:', parseError.message)
+                }
+            }
+
+            session.webSocket.on('message', messageHandler)
+            session.webSocket.send(JSON.stringify(command))
         })
     }
-    
+
+    /**
+     * 执行JavaScript脚本
+     */
     async executeScript(session, script) {
         console.log('📜 执行页面脚本...')
-        
+
         try {
             const result = await this.sendCommand(session, 'Runtime.evaluate', {
                 expression: script,
                 returnByValue: true,
-                awaitPromise: false
+                awaitPromise: true
             })
-            
+
+            if (result.result.exceptionDetails) {
+                throw new Error(`脚本执行错误: ${result.result.exceptionDetails.exception.description}`)
+            }
+
             return result
         } catch (error) {
-            console.error('❌ 脚本执行失败:', error.message)
+            console.error(`❌ 脚本执行失败: ${error.message}`)
             throw error
         }
     }
-    
+
+    /**
+     * 关闭会话
+     */
     async closeSession(sessionId) {
         const session = this.sessions.get(sessionId)
         if (session) {
-            try {
-                if (session.websocket && session.websocket.readyState === WebSocket.OPEN) {
-                    session.websocket.close()
-                }
-            } catch (e) {
-                // 忽略关闭错误
+            if (session.webSocket) {
+                session.webSocket.close()
             }
             this.sessions.delete(sessionId)
             console.log(`🔌 会话已关闭: ${sessionId}`)
+        }
+    }
+
+    /**
+     * 获取会话
+     */
+    getSession(sessionId) {
+        return this.sessions.get(sessionId)
+    }
+
+    /**
+     * 获取所有会话
+     */
+    getAllSessions() {
+        return Array.from(this.sessions.values())
+    }
+
+    /**
+     * 清理所有会话
+     */
+    async cleanup() {
+        console.log('🧹 清理所有浏览器会话...')
+
+        for (const sessionId of this.sessions.keys()) {
+            await this.closeSession(sessionId)
+        }
+
+        console.log('✅ 所有会话已清理')
+    }
+
+    /**
+     * 延迟工具方法
+     */
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms))
+    }
+
+    /**
+     * 检查Chrome调试端口是否可用
+     */
+    async checkChromeDebugPort(debugPort = null) {
+        const port = debugPort || this.config.debugPort
+        try {
+            const response = await fetch(`http://localhost:${port}/json/version`)
+            if (response.ok) {
+                const version = await response.json()
+                console.log(`🌐 Chrome调试端口可用: ${version.Browser} (端口:${port})`)
+                return true
+            }
+            return false
+        } catch (error) {
+            console.error(`❌ Chrome调试端口检查失败 (端口:${port}): ${error.message}`)
+            return false
+        }
+    }
+
+    /**
+     * 获取浏览器信息
+     */
+    async getBrowserInfo(debugPort = null) {
+        const port = debugPort || this.config.debugPort
+        try {
+            const response = await fetch(`http://localhost:${port}/json/version`)
+            const info = await response.json()
+            return {
+                browser: info.Browser,
+                userAgent: info['User-Agent'],
+                v8Version: info['V8-Version'],
+                webkitVersion: info['WebKit-Version']
+            }
+        } catch (error) {
+            throw new Error(`无法获取浏览器信息: ${error.message}`)
         }
     }
 }

@@ -1,66 +1,59 @@
-// automation/engines/multi-platform-publisher.js
+// automation/engines/multi-platform-engine.js - 精简版本
+// 移除抽象层，直接调用专门的 publisher
+
 import { WeChatVideoPublisher } from './wechat-video-publisher.js'
 import { DouyinVideoPublisher } from './douyin-video-publisher.js'
-// import { XiaohongshuVideoPublisher } from './xiaohongshu-video-publisher.js'
-// import { KuaishouVideoPublisher } from './kuaishou-video-publisher.js'
 import { getPlatformConfig } from '../config/platforms.js'
 
 export class MultiPlatformPublisher {
     constructor() {
         this.publishers = new Map()
-        this.sessions = new Map()
+        this.initializePublishers()
     }
 
-    // 注册平台发布器
-    registerPublisher(platformId, publisherClass) {
-        this.publishers.set(platformId, publisherClass)
-    }
-
-    // 初始化所有发布器
+    // 初始化发布器映射
     initializePublishers() {
-        this.registerPublisher('wechat', WeChatVideoPublisher)
-        this.registerPublisher('douyin', DouyinVideoPublisher)
-        // this.registerPublisher('xiaohongshu', XiaohongshuVideoPublisher)
-        // this.registerPublisher('kuaishou', KuaishouVideoPublisher)
+        this.publishers.set('wechat', WeChatVideoPublisher)
+        this.publishers.set('douyin', DouyinVideoPublisher)
+        // 可以继续添加其他平台
+        // this.publishers.set('xiaohongshu', XiaohongshuVideoPublisher)
+        // this.publishers.set('kuaishou', KuaishouVideoPublisher)
     }
 
-    // 创建平台发布器实例
-    async createPublisher(platformId, session) {
-        const PublisherClass = this.publishers.get(platformId)
-        if (!PublisherClass) {
-            throw new Error(`不支持的平台: ${platformId}`)
-        }
-
-        const platformConfig = getPlatformConfig(platformId)
-        if (!platformConfig) {
-            throw new Error(`平台配置不存在: ${platformId}`)
-        }
-
-        return new PublisherClass(session, platformConfig)
-    }
-
-    // 单平台发布
+    // 单平台发布 - 直接实例化对应的专门 publisher
     async publishToPlatform(platformId, session, content, filePath) {
         console.log(`🚀 开始发布到 ${platformId}`)
 
         try {
-            const publisher = await this.createPublisher(platformId, session)
+            // 获取平台配置
+            const platformConfig = getPlatformConfig(platformId)
+            if (!platformConfig) {
+                throw new Error(`不支持的平台: ${platformId}`)
+            }
 
-            // 步骤1: 上传文件
+            // 获取对应的 Publisher 类
+            const PublisherClass = this.publishers.get(platformId)
+            if (!PublisherClass) {
+                throw new Error(`平台 ${platformId} 的发布器未实现`)
+            }
+
+            // 直接实例化专门的 publisher
+            const publisher = new PublisherClass(session, platformConfig)
+
+            // 执行发布流程：上传 -> 填表 -> 发布
             console.log(`📤 步骤1: 上传文件到 ${platformId}`)
             const uploadResult = await publisher.uploadFile(filePath)
 
-            // 步骤2: 填写表单
             console.log(`📝 步骤2: 填写 ${platformId} 表单`)
             const formResult = await publisher.fillForm(content)
 
-            // 步骤3: 发布
             console.log(`🚀 步骤3: 发布到 ${platformId}`)
             const publishResult = await publisher.publish()
 
             return {
                 success: true,
                 platform: platformId,
+                platformName: platformConfig.name,
                 steps: {
                     upload: uploadResult,
                     form: formResult,
@@ -72,6 +65,7 @@ export class MultiPlatformPublisher {
             return {
                 success: false,
                 platform: platformId,
+                platformName: getPlatformConfig(platformId)?.name || platformId,
                 error: error.message
             }
         }
@@ -79,21 +73,42 @@ export class MultiPlatformPublisher {
 
     // 多平台并行发布
     async publishToMultiplePlatforms(platforms, sessions, content, filePath) {
-        console.log(`📦 开始多平台并行发布: ${platforms.join(', ')}`)
-
-        const publishPromises = platforms.map(async (platformId, index) => {
-            const session = sessions[index]
-            if (!session) {
-                throw new Error(`平台 ${platformId} 缺少对应的浏览器会话`)
-            }
-
-            return this.publishToPlatform(platformId, session, content, filePath)
-        })
+        console.log(`📦 开始多平台发布: ${platforms.join(', ')}`)
 
         try {
-            const results = await Promise.allSettled(publishPromises)
+            // 验证参数
+            if (platforms.length !== sessions.length) {
+                throw new Error(`平台数量(${platforms.length})与会话数量(${sessions.length})不匹配`)
+            }
 
-            const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length
+            // 串行执行，避免并发问题
+            const results = []
+            for (let i = 0; i < platforms.length; i++) {
+                const platformId = platforms[i]
+                const session = sessions[i]
+
+                try {
+                    console.log(`\n📱 发布到平台: ${platformId}`)
+                    const result = await this.publishToPlatform(platformId, session, content, filePath)
+                    results.push(result)
+
+                    // 平台间延迟，避免过于频繁的操作
+                    if (i < platforms.length - 1) {
+                        console.log('⏳ 等待 3 秒后处理下一个平台...')
+                        await this.delay(3000)
+                    }
+                } catch (error) {
+                    console.error(`❌ 平台 ${platformId} 发布失败:`, error.message)
+                    results.push({
+                        success: false,
+                        platform: platformId,
+                        platformName: getPlatformConfig(platformId)?.name || platformId,
+                        error: error.message
+                    })
+                }
+            }
+
+            const successCount = results.filter(r => r.success).length
             const failureCount = results.length - successCount
 
             console.log(`📊 多平台发布完成: 成功 ${successCount}, 失败 ${failureCount}`)
@@ -103,11 +118,7 @@ export class MultiPlatformPublisher {
                 totalPlatforms: platforms.length,
                 successCount,
                 failureCount,
-                results: results.map((result, index) => ({
-                    platform: platforms[index],
-                    status: result.status,
-                    ...result.value
-                }))
+                results
             }
         } catch (error) {
             console.error('❌ 多平台发布失败:', error.message)
@@ -191,5 +202,10 @@ export class MultiPlatformPublisher {
         }
 
         return adapted
+    }
+
+    // 工具方法
+    async delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms))
     }
 }

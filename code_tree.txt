@@ -21,7 +21,6 @@
 │   │   └── workflow-engine.js
 │   ├── debug-page-elements.js
 │   ├── engines
-│   │   ├── base-publisher.js
 │   │   ├── douyin-video-publisher.js
 │   │   ├── multi-platform-engine.js
 │   │   └── wechat-video-publisher.js
@@ -30,12 +29,29 @@
 │   │   └── browser-integration.js
 │   ├── logs
 │   ├── output
-│   │   └── video-publish-account_1748421858240_7ua5pcz7x-2025-06-09T06-33-50-007Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-10-02-123Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-11-01-897Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-12-27-059Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-14-48-392Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-26-57-325Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-27-26-519Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-30-47-291Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-33-24-396Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-38-32-860Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T06-51-29-767Z.json
+│   │   ├── wechat-video-wechat_test-2025-06-10T07-02-47-059Z.json
+│   │   ├── wechat-video-wechat_test-2025-06-10T07-03-09-025Z.json
+│   │   ├── wechat-video-wechat_test-2025-06-10T07-06-18-950Z.json
+│   │   └── wechat-video-wechat_test-2025-06-10T07-06-42-983Z.json
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── README.md
 │   ├── test
 │   │   └── automation-test.js
+│   ├── test-account.json
+│   ├── test_cli.sh
+│   ├── test-content.json
+│   ├── test-template.json
 │   ├── uploads
 │   ├── utils
 │   │   └── element-analyzer.js
@@ -44,8 +60,7 @@
 │   ├── video-content.json
 │   ├── videos
 │   │   └── sample.mp4
-│   ├── video-template.json
-│   └── wechat-publisher
+│   └── video-template.json
 ├── code_tree.txt
 ├── data
 ├── electron
@@ -343,4 +358,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-114 directories, 229 files
+113 directories, 245 files

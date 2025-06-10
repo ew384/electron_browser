@@ -1,0 +1,6 @@
+{
+  "id": "douyin_test",
+  "name": "测试账号",
+  "platform": "douyin",
+  "debugPort": 9711
+}
