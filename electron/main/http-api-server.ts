@@ -25,7 +25,7 @@ export class HttpApiServer {
     private port: number = 9528; // 使用一个固定端口
     private windowManager: WindowManager;
     private accountStorage: AccountStorage;
-
+    private commandIdCounter: number = 1; // 🔧 新增：命令ID计数器
     constructor(windowManager: WindowManager, accountStorage: AccountStorage) {
         this.windowManager = windowManager;
         this.accountStorage = accountStorage;
@@ -87,7 +87,6 @@ export class HttpApiServer {
             // 设置响应头
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Access-Control-Allow-Origin', '*');
-
             // 路由处理
             if (method === 'GET' && pathname === '/api/health') {
                 await this.handleHealthCheck(req, res);
@@ -96,11 +95,34 @@ export class HttpApiServer {
             } else if (method === 'GET' && pathname === '/api/browsers') {
                 await this.handleGetBrowsers(req, res);
             } else if (method === 'GET' && pathname?.startsWith('/api/browser/')) {
+                const pathParts = pathname.split('/');
+                const accountId = pathParts[3];
+
+                if (pathname.endsWith('/tabs')) {
+                    await this.handleGetBrowserTabs(req, res, accountId);
+                } else if (pathParts.length === 4) {
+                    await this.handleGetBrowser(req, res, accountId);
+                } else {
+                    // 404
+                    res.writeHead(404);
+                    res.end(JSON.stringify({ success: false, error: 'Not Found' }));
+                }
+            } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/execute-script$/)) {
+                // 🔧 新增：执行脚本
                 const accountId = pathname.split('/')[3];
-                await this.handleGetBrowser(req, res, accountId);
-            } else if (method === 'GET' && pathname?.startsWith('/api/browser/') && pathname.endsWith('/tabs')) {
+                await this.handleExecuteScript(req, res, accountId);
+            } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/upload-file$/)) {
+                // 🔧 新增：上传文件
                 const accountId = pathname.split('/')[3];
-                await this.handleGetBrowserTabs(req, res, accountId);
+                await this.handleUploadFile(req, res, accountId);
+            } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/navigate$/)) {
+                // 🔧 新增：导航页面
+                const accountId = pathname.split('/')[3];
+                await this.handleNavigate(req, res, accountId);
+            } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/wait-for$/)) {
+                // 🔧 新增：等待元素
+                const accountId = pathname.split('/')[3];
+                await this.handleWaitFor(req, res, accountId);
             } else if (method === 'POST' && pathname === '/api/browsers/refresh') {
                 await this.handleRefreshBrowsers(req, res);
             } else if (method === 'GET' && pathname === '/api/debug/chrome-ports') {
@@ -126,6 +148,509 @@ export class HttpApiServer {
                 }));
             }
         }
+    }
+
+    // 🔧 新增：执行脚本的处理器
+    private async handleExecuteScript(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Browser instance not running'
+                }));
+                return;
+            }
+
+            // 读取请求体
+            const body = await this.readRequestBody(req);
+            const { script, awaitPromise = false, returnByValue = true } = JSON.parse(body);
+
+            if (!script) {
+                res.writeHead(400);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Script is required'
+                }));
+                return;
+            }
+
+            // 获取标签页列表
+            const tabs = await this.getChromeTabsInfo(port);
+            if (tabs.length === 0) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'No active tabs found'
+                }));
+                return;
+            }
+
+            // 使用第一个活跃标签页
+            const targetTab = tabs[0];
+            const result = await this.executeScriptInTab(port, targetTab.id, script, { awaitPromise, returnByValue });
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                result: result,
+                tabId: targetTab.id
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Execute script error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 🔧 新增：上传文件的处理器
+    private async handleUploadFile(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Browser instance not running'
+                }));
+                return;
+            }
+
+            const body = await this.readRequestBody(req);
+            const { filePath, fileName, mimeType, base64Data, selector = 'input[type="file"]' } = JSON.parse(body);
+
+            if (!base64Data && !filePath) {
+                res.writeHead(400);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'File data is required (base64Data or filePath)'
+                }));
+                return;
+            }
+
+            // 构建文件上传脚本
+            const uploadScript = this.generateFileUploadScript(fileName, mimeType, base64Data, selector);
+
+            // 获取活跃标签页并执行脚本
+            const tabs = await this.getChromeTabsInfo(port);
+            if (tabs.length === 0) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'No active tabs found'
+                }));
+                return;
+            }
+
+            const targetTab = tabs[0];
+            const result = await this.executeScriptInTab(port, targetTab.id, uploadScript, { returnByValue: true });
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                result: result,
+                tabId: targetTab.id,
+                fileName: fileName
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Upload file error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 🔧 新增：导航页面的处理器
+    private async handleNavigate(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Browser instance not running'
+                }));
+                return;
+            }
+
+            const body = await this.readRequestBody(req);
+            const { url } = JSON.parse(body);
+
+            if (!url) {
+                res.writeHead(400);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'URL is required'
+                }));
+                return;
+            }
+
+            const tabs = await this.getChromeTabsInfo(port);
+            if (tabs.length === 0) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'No active tabs found'
+                }));
+                return;
+            }
+
+            const targetTab = tabs[0];
+            await this.sendCDPCommand(port, targetTab.id, 'Page.navigate', { url });
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                message: 'Navigation started',
+                url: url,
+                tabId: targetTab.id
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Navigate error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 🔧 新增：等待条件的处理器
+    private async handleWaitFor(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Browser instance not running'
+                }));
+                return;
+            }
+
+            const body = await this.readRequestBody(req);
+            const { condition, timeout = 30000, interval = 1000 } = JSON.parse(body);
+
+            if (!condition) {
+                res.writeHead(400);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Condition is required'
+                }));
+                return;
+            }
+
+            const tabs = await this.getChromeTabsInfo(port);
+            if (tabs.length === 0) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'No active tabs found'
+                }));
+                return;
+            }
+
+            const targetTab = tabs[0];
+            const result = await this.waitForCondition(port, targetTab.id, condition, timeout, interval);
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                result: result,
+                tabId: targetTab.id
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Wait for error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 🔧 新增：辅助方法 - 读取请求体
+    private readRequestBody(req: http.IncomingMessage): Promise<string> {
+        return new Promise((resolve, reject) => {
+            let body = '';
+            req.on('data', (chunk) => {
+                body += chunk.toString();
+            });
+            req.on('end', () => {
+                resolve(body);
+            });
+            req.on('error', reject);
+        });
+    }
+
+    // 🔧 新增：在指定标签页执行脚本
+    private async executeScriptInTab(port: number, tabId: string, script: string, options: any = {}): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const WebSocket = require('ws');
+            const ws = new WebSocket(`ws://localhost:${port}/devtools/page/${tabId}`);
+
+            let resolved = false;
+            let timeoutId: NodeJS.Timeout;
+
+            const cleanup = () => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.close();
+                }
+            };
+
+            const handleResolve = (result: any) => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                resolve(result);
+            };
+
+            const handleReject = (error: Error) => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                reject(error);
+            };
+
+            ws.on('open', () => {
+                console.log(`[HttpApiServer] ✅ WebSocket连接成功到标签页: ${tabId}`);
+
+                // 🔧 修复：使用简单的递增整数作为命令ID
+                const commandId = this.commandIdCounter++;
+                const command = {
+                    id: commandId,
+                    method: 'Runtime.evaluate',
+                    params: {
+                        expression: script,
+                        returnByValue: options.returnByValue !== false,
+                        awaitPromise: options.awaitPromise || false
+                    }
+                };
+
+                console.log(`[HttpApiServer] 📤 发送CDP命令 (ID: ${commandId}):`, JSON.stringify(command, null, 2));
+                ws.send(JSON.stringify(command));
+
+                const messageHandler = (data: any) => {
+                    if (resolved) return;
+
+                    try {
+                        const response = JSON.parse(data.toString());
+                        console.log(`[HttpApiServer] 📥 收到CDP响应:`, JSON.stringify(response, null, 2));
+
+                        if (response.id === commandId) {
+                            if (response.error) {
+                                console.error(`[HttpApiServer] ❌ CDP命令错误:`, response.error);
+                                handleReject(new Error(`CDP Error: ${response.error.message}`));
+                            } else {
+                                console.log(`[HttpApiServer] ✅ CDP命令成功执行`);
+                                handleResolve(response.result);
+                            }
+                        }
+                    } catch (parseError) {
+                        console.error(`[HttpApiServer] ❌ JSON解析错误:`, parseError);
+                        handleReject(new Error(`Response parse error: ${parseError}`));
+                    }
+                };
+
+                ws.on('message', messageHandler);
+            });
+
+            ws.on('error', (error: any) => {
+                console.error(`[HttpApiServer] ❌ WebSocket连接错误:`, error);
+                handleReject(new Error(`WebSocket error: ${error.message}`));
+            });
+
+            ws.on('close', (code: number, reason: string) => {
+                console.log(`[HttpApiServer] 🔌 WebSocket连接已关闭: ${tabId}, code: ${code}, reason: ${reason}`);
+                if (!resolved) {
+                    handleReject(new Error(`WebSocket closed unexpectedly: ${code} ${reason}`));
+                }
+            });
+
+            // 设置60秒超时
+            timeoutId = setTimeout(() => {
+                console.error(`[HttpApiServer] ⏰ 脚本执行超时: ${tabId}`);
+                handleReject(new Error('Script execution timeout (60s)'));
+            }, 60000);
+        });
+    }
+
+    // 🔧 修复：sendCDPCommand方法也需要同样的修复
+    private async sendCDPCommand(port: number, tabId: string, method: string, params: any = {}): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const WebSocket = require('ws');
+            const ws = new WebSocket(`ws://localhost:${port}/devtools/page/${tabId}`);
+
+            let resolved = false;
+            let timeoutId: NodeJS.Timeout;
+
+            const cleanup = () => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.close();
+                }
+            };
+
+            ws.on('open', () => {
+                // 🔧 修复：使用简单的递增整数作为命令ID
+                const commandId = this.commandIdCounter++;
+                const command = {
+                    id: commandId,
+                    method: method,
+                    params: params
+                };
+
+                console.log(`[HttpApiServer] 📤 发送CDP命令 (${method}, ID: ${commandId}):`, JSON.stringify(command));
+                ws.send(JSON.stringify(command));
+
+                const messageHandler = (data: any) => {
+                    if (resolved) return;
+
+                    try {
+                        const response = JSON.parse(data.toString());
+                        if (response.id === commandId) {
+                            resolved = true;
+                            cleanup();
+                            if (response.error) {
+                                reject(new Error(`CDP Error: ${response.error.message}`));
+                            } else {
+                                resolve(response.result);
+                            }
+                        }
+                    } catch (parseError) {
+                        reject(new Error(`Response parse error: ${parseError}`));
+                    }
+                };
+
+                ws.on('message', messageHandler);
+            });
+
+            ws.on('error', (error: any) => {
+                if (!resolved) {
+                    resolved = true;
+                    cleanup();
+                    reject(new Error(`WebSocket error: ${error.message}`));
+                }
+            });
+
+            // 30秒超时
+            timeoutId = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    cleanup();
+                    reject(new Error('CDP command timeout'));
+                }
+            }, 30000);
+        });
+    }
+
+
+    // 🔧 新增：等待条件满足
+    private async waitForCondition(port: number, tabId: string, condition: string, timeout: number, interval: number): Promise<any> {
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < timeout) {
+            try {
+                const result = await this.executeScriptInTab(port, tabId, condition, { returnByValue: true });
+                if (result.value) {
+                    return result;
+                }
+            } catch (error) {
+                // 继续等待
+            }
+
+            await new Promise(resolve => setTimeout(resolve, interval));
+        }
+
+        throw new Error('Wait condition timeout');
+    }
+
+    // 🔧 新增：生成文件上传脚本
+    private generateFileUploadScript(fileName: string, mimeType: string, base64Data: string, selector: string): string {
+        return `
+        (function() {
+            try {
+                // 查找文件输入框
+                let fileInput = document.querySelector('${selector}');
+                
+                if (!fileInput) {
+                    // 尝试其他常见选择器
+                    const selectors = [
+                        'input[type="file"]',
+                        'input[accept*="video"]',
+                        'input[accept*="image"]',
+                        '[data-testid*="upload"] input',
+                        '.upload-input input'
+                    ];
+                    
+                    for (const sel of selectors) {
+                        fileInput = document.querySelector(sel);
+                        if (fileInput) break;
+                    }
+                }
+                
+                if (!fileInput) {
+                    throw new Error('File input not found');
+                }
+                
+                // 创建File对象
+                const byteCharacters = atob('${base64Data}');
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: '${mimeType}' });
+                const file = new File([blob], '${fileName}', {
+                    type: '${mimeType}',
+                    lastModified: Date.now()
+                });
+                
+                // 创建FileList
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                
+                // 设置文件到input
+                Object.defineProperty(fileInput, 'files', {
+                    value: dataTransfer.files,
+                    configurable: true
+                });
+                
+                // 触发事件
+                fileInput.focus();
+                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                return {
+                    success: true,
+                    fileName: '${fileName}',
+                    fileSize: ${base64Data.length},
+                    mimeType: '${mimeType}'
+                };
+                
+            } catch (error) {
+                return { 
+                    success: false, 
+                    error: error.message 
+                };
+            }
+        })()
+    `;
     }
 
     private async handleHealthCheck(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

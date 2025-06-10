@@ -1,5 +1,5 @@
 {
   "id": "account_001",
   "name": "测试账号",
-  "profile": {}
+  "platform": "wechat"
 }

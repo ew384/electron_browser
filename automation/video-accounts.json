@@ -1,14 +1,22 @@
 [
   {
-    "id": "account_001",
-    "name": "测试账号1"
+    "id": "wechat_001",
+    "name": "微信账号1",
+    "platform": "wechat"
   },
   {
-    "id": "account_002",
-    "name": "测试账号2"
+    "id": "douyin_001",
+    "name": "抖音账号1",
+    "platform": "douyin"
   },
   {
-    "id": "account_003",
-    "name": "测试账号3"
+    "id": "xiaohongshu_001",
+    "name": "小红书账号1",
+    "platform": "xiaohongshu"
+  },
+  {
+    "id": "kuaishou_001",
+    "name": "快手账号1",
+    "platform": "kuaishou"
   }
 ]
