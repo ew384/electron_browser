@@ -1,0 +1,6 @@
+{
+  "id": "wechat_test",
+  "name": "微信测试账号",
+  "platform": "wechat",
+  "debugPort": 9711
+}

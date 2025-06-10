@@ -78,7 +78,9 @@ export class BasePublisher {
         return new Promise(resolve => setTimeout(resolve, ms))
     }
 
-    // 通用文件上传方法
+    // 在 automation/engines/base-publisher.js 的 uploadFileToInput 方法中
+    // 直接在方法内部定义 getMimeType 函数，而不是调用 this.getMimeType
+
     async uploadFileToInput(filePath, inputSelector = 'input[type="file"]') {
         console.log(`📤 上传文件到 ${this.platformConfig.name}: ${filePath}`)
 
@@ -86,87 +88,12 @@ export class BasePublisher {
             throw new Error(`文件不存在: ${filePath}`)
         }
 
+        console.log('📜 执行页面脚本...')
+
         const fileBuffer = fs.readFileSync(filePath)
         const base64Data = fileBuffer.toString('base64')
         const fileName = path.basename(filePath)
-        const mimeType = this.getMimeType(filePath)
 
-        const script = `
-            (function() {
-                try {
-                    ${this.features.useIframe ? `
-                        const iframe = document.querySelector('iframe');
-                        if (!iframe || !iframe.contentDocument) {
-                            throw new Error('无法访问iframe');
-                        }
-                        const doc = iframe.contentDocument;
-                    ` : `
-                        const doc = document;
-                    `}
-                    
-                    let fileInput = doc.querySelector('${inputSelector}');
-                    if (!fileInput) {
-                        const selectors = [
-                            'input[type="file"]',
-                            'input[accept*="video"]',
-                            'input[accept*="image"]',
-                            '[data-testid*="upload"] input'
-                        ];
-                        
-                        for (const selector of selectors) {
-                            fileInput = doc.querySelector(selector);
-                            if (fileInput) break;
-                        }
-                    }
-                    
-                    if (!fileInput) {
-                        throw new Error('未找到文件上传输入框');
-                    }
-                    
-                    // 创建File对象
-                    const byteCharacters = atob('${base64Data}');
-                    const byteNumbers = new Array(byteCharacters.length);
-                    for (let i = 0; i < byteCharacters.length; i++) {
-                        byteNumbers[i] = byteCharacters.charCodeAt(i);
-                    }
-                    const byteArray = new Uint8Array(byteNumbers);
-                    const blob = new Blob([byteArray], { type: '${mimeType}' });
-                    const file = new File([blob], '${fileName}', {
-                        type: '${mimeType}',
-                        lastModified: Date.now()
-                    });
-                    
-                    // 设置文件
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(file);
-                    Object.defineProperty(fileInput, 'files', {
-                        value: dataTransfer.files,
-                        configurable: true
-                    });
-                    
-                    // 触发事件
-                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                    fileInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    
-                    return { success: true, fileName: '${fileName}' };
-                } catch (e) {
-                    return { success: false, error: e.message };
-                }
-            })()
-        `
-
-        const result = await this.executeScript(script)
-        const uploadResult = result.result.value
-
-        if (!uploadResult.success) {
-            throw new Error(`文件上传失败: ${uploadResult.error}`)
-        }
-
-        console.log(`✅ 文件上传成功: ${uploadResult.fileName}`)
-        return uploadResult
-    }
-
-    getMimeType(filePath) {
         const ext = path.extname(filePath).toLowerCase()
         const mimeTypes = {
             '.mp4': 'video/mp4',
@@ -179,6 +106,78 @@ export class BasePublisher {
             '.mp3': 'audio/mpeg',
             '.wav': 'audio/wav'
         }
-        return mimeTypes[ext] || 'application/octet-stream'
+        const mimeType = mimeTypes[ext] || 'application/octet-stream'
+
+        const script = `
+        (function() {
+            try {
+                ${this.features.useIframe ? `
+                    const iframe = document.querySelector('iframe');
+                    if (!iframe || !iframe.contentDocument) {
+                        throw new Error('无法访问iframe');
+                    }
+                    const doc = iframe.contentDocument;
+                ` : `
+                    const doc = document;
+                `}
+                
+                // 如果有上传区域配置，先点击上传区域
+                const uploadAreaSelector = '${this.selectors.uploadArea || ''}';
+                if (uploadAreaSelector) {
+                    const uploadArea = doc.querySelector(uploadAreaSelector);
+                    if (uploadArea) {
+                        uploadArea.click();
+                        // 简单等待
+                        const start = Date.now();
+                        while (Date.now() - start < 500) {}
+                    }
+                }
+                
+                // 使用配置中的文件输入框选择器
+                let fileInput = doc.querySelector('${this.selectors.fileInput || inputSelector}');
+                
+                if (!fileInput) {
+                    throw new Error('未找到文件上传输入框');
+                }
+                
+                // 创建和设置文件
+                const byteCharacters = atob('${base64Data}');
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: '${mimeType}' });
+                const file = new File([blob], '${fileName}', {
+                    type: '${mimeType}',
+                    lastModified: Date.now()
+                });
+                
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                Object.defineProperty(fileInput, 'files', {
+                    value: dataTransfer.files,
+                    configurable: true
+                });
+                
+                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                return { success: true, fileName: '${fileName}' };
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
+        })()
+    `
+
+        const result = await this.executeScript(script)
+        const uploadResult = result.result.value
+
+        if (!uploadResult.success) {
+            throw new Error(`文件上传失败: ${uploadResult.error}`)
+        }
+
+        console.log(`✅ 文件上传成功: ${uploadResult.fileName}`)
+        return uploadResult
     }
 }

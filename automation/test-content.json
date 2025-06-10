@@ -1,0 +1,8 @@
+{
+  "title": "CLI测试视频",
+  "description": "这是通过CLI直接测试的视频发布，用于验证自动化流程是否正常工作。",
+  "location": "北京市",
+  "tags": ["测试", "CLI", "自动化"],
+  "hashtags": ["技术测试", "自动化发布"],
+  "videoFile": "/oper/work/endian/rpa-platform/uploads/videos/file-1749536056685-861199448.mp4"
+}

@@ -19,6 +19,7 @@ export const PLATFORM_CONFIGS = {
         selectors: {
             // 微信特有的iframe结构
             iframe: 'iframe',
+            uploadArea: '.center, .upload-area',
             fileInput: 'input[type="file"]',
 
             // 表单字段
