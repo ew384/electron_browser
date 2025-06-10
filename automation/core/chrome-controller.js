@@ -1,13 +1,12 @@
-// automation/core/chrome-controller.js - 修复 WebSocket 问题
-// 在 Node.js 环境中使用 ws 库
+// automation/core/chrome-controller.js - 增强版本
+// 添加自动导航到平台上传页面的功能
 
-import WebSocket from 'ws'
 import { getPlatformConfig } from '../config/platforms.js'
 
 export class ChromeController {
     constructor(config = {}) {
         this.config = {
-            debugPort: config.debugPort || 9225,
+            debugPort: config.debugPort || 9711,
             timeout: config.timeout || 15000,
             retryAttempts: config.retryAttempts || 3,
             ...config
@@ -19,14 +18,10 @@ export class ChromeController {
         console.log(`🔗 创建浏览器会话: ${account.id}`)
 
         try {
-            // 使用账号中的 debugPort，如果没有则使用默认端口
-            const debugPort = account.debugPort || this.config.debugPort
-            console.log(`🔌 连接Chrome调试端口: ${debugPort}`)
-
             // 1. 连接到Chrome调试端口
-            const response = await fetch(`http://localhost:${debugPort}/json`)
+            const response = await fetch(`http://localhost:${this.config.debugPort}/json`)
             if (!response.ok) {
-                throw new Error(`无法连接到Chrome调试端口 ${debugPort}。请确保Chrome以调试模式启动：chrome --remote-debugging-port=${debugPort}`)
+                throw new Error(`无法连接到Chrome调试端口 ${this.config.debugPort}。请确保Chrome以调试模式启动：chrome --remote-debugging-port=${this.config.debugPort}`)
             }
 
             const tabs = await response.json()
@@ -40,7 +35,7 @@ export class ChromeController {
             }
 
             // 3. 查找或创建目标页面
-            let targetTab = await this.findOrCreateTargetTab(tabs, platformConfig, account, debugPort)
+            let targetTab = await this.findOrCreateTargetTab(tabs, platformConfig, account)
 
             // 4. 建立WebSocket连接
             const wsUrl = targetTab.webSocketDebuggerUrl
@@ -52,7 +47,6 @@ export class ChromeController {
                 platform: platformId,
                 platformConfig: platformConfig,
                 account: account,
-                debugPort: debugPort,
                 tabId: targetTab.id,
                 webSocket: ws,
                 chromeController: this // 添加对自己的引用
@@ -78,7 +72,7 @@ export class ChromeController {
     /**
      * 查找或创建目标标签页
      */
-    async findOrCreateTargetTab(tabs, platformConfig, account, debugPort) {
+    async findOrCreateTargetTab(tabs, platformConfig, account) {
         const uploadUrl = platformConfig.urls.upload
         const loginUrl = platformConfig.urls.login
         const dashboardUrl = platformConfig.urls.dashboard
@@ -87,7 +81,7 @@ export class ChromeController {
         let targetTab = tabs.find(tab =>
             tab.url && (
                 tab.url.includes(uploadUrl) ||
-                tab.url.includes(this.extractDomain(uploadUrl)) // 匹配域名
+                tab.url.includes(platformConfig.urls.upload.split('/').slice(0, 3).join('/')) // 匹配域名
             )
         )
 
@@ -99,8 +93,9 @@ export class ChromeController {
         // 2. 查找登录页面或仪表板页面
         targetTab = tabs.find(tab =>
             tab.url && (
-                tab.url.includes(this.extractDomain(loginUrl)) ||
-                tab.url.includes(this.extractDomain(dashboardUrl))
+                tab.url.includes(loginUrl) ||
+                tab.url.includes(dashboardUrl) ||
+                tab.url.includes(platformConfig.urls.login?.split('/').slice(0, 3).join('/'))
             )
         )
 
@@ -124,7 +119,7 @@ export class ChromeController {
 
         // 4. 如果没有合适的标签页，创建新标签页
         console.log(`📱 创建新标签页用于${platformConfig.name}`)
-        const newTabResponse = await fetch(`http://localhost:${debugPort}/json/new?${uploadUrl}`)
+        const newTabResponse = await fetch(`http://localhost:${this.config.debugPort}/json/new?${uploadUrl}`)
         if (!newTabResponse.ok) {
             throw new Error('无法创建新标签页')
         }
@@ -139,39 +134,25 @@ export class ChromeController {
     }
 
     /**
-     * 提取域名的辅助方法
-     */
-    extractDomain(url) {
-        try {
-            const urlObj = new URL(url)
-            return urlObj.hostname
-        } catch (error) {
-            return url.split('/')[2] || url
-        }
-    }
-
-    /**
-     * 建立WebSocket连接 - 使用 ws 库
+     * 建立WebSocket连接
      */
     async connectWebSocket(wsUrl) {
         return new Promise((resolve, reject) => {
-            console.log(`🔌 建立WebSocket连接: ${wsUrl}`)
-
             const ws = new WebSocket(wsUrl)
 
-            ws.on('open', () => {
+            ws.onopen = () => {
                 console.log('🔌 WebSocket连接已建立')
                 resolve(ws)
-            })
+            }
 
-            ws.on('error', (error) => {
-                console.error('❌ WebSocket连接失败:', error.message)
-                reject(new Error(`WebSocket连接失败: ${error.message}`))
-            })
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket连接失败:', error)
+                reject(new Error('WebSocket连接失败'))
+            }
 
-            ws.on('close', () => {
+            ws.onclose = () => {
                 console.log('🔌 WebSocket连接已关闭')
-            })
+            }
 
             // 设置超时
             setTimeout(() => {
@@ -213,7 +194,7 @@ export class ChromeController {
             console.log(`📍 当前页面: ${currentUrl}`)
 
             // 检查是否已经在上传页面
-            if (currentUrl && (currentUrl.includes(uploadUrl) || currentUrl === uploadUrl)) {
+            if (currentUrl && currentUrl.includes(uploadUrl)) {
                 console.log(`✅ 已在${session.platformConfig.name}上传页面`)
                 return true
             }
@@ -265,7 +246,7 @@ export class ChromeController {
 
                 if (readyState === 'complete') {
                     // 额外等待确保动态内容加载
-                    await this.delay(3000) // 增加等待时间
+                    await this.delay(2000)
                     console.log('✅ 页面加载完成')
                     return true
                 }
@@ -284,7 +265,7 @@ export class ChromeController {
     }
 
     /**
-     * 发送Chrome DevTools命令 - 适配 ws 库
+     * 发送Chrome DevTools命令
      */
     async sendCommand(session, method, params = {}) {
         return new Promise((resolve, reject) => {
@@ -299,26 +280,22 @@ export class ChromeController {
                 reject(new Error(`命令超时: ${method}`))
             }, this.config.timeout)
 
-            const messageHandler = (data) => {
-                try {
-                    const message = JSON.parse(data.toString())
+            const messageHandler = (event) => {
+                const data = JSON.parse(event.data)
 
-                    if (message.id === id) {
-                        clearTimeout(timeoutId)
-                        session.webSocket.off('message', messageHandler)
+                if (data.id === id) {
+                    clearTimeout(timeoutId)
+                    session.webSocket.removeEventListener('message', messageHandler)
 
-                        if (message.error) {
-                            reject(new Error(`Chrome DevTools错误: ${message.error.message}`))
-                        } else {
-                            resolve(message)
-                        }
+                    if (data.error) {
+                        reject(new Error(`Chrome DevTools错误: ${data.error.message}`))
+                    } else {
+                        resolve(data)
                     }
-                } catch (parseError) {
-                    console.error('消息解析错误:', parseError.message)
                 }
             }
 
-            session.webSocket.on('message', messageHandler)
+            session.webSocket.addEventListener('message', messageHandler)
             session.webSocket.send(JSON.stringify(command))
         })
     }
@@ -398,18 +375,17 @@ export class ChromeController {
     /**
      * 检查Chrome调试端口是否可用
      */
-    async checkChromeDebugPort(debugPort = null) {
-        const port = debugPort || this.config.debugPort
+    async checkChromeDebugPort() {
         try {
-            const response = await fetch(`http://localhost:${port}/json/version`)
+            const response = await fetch(`http://localhost:${this.config.debugPort}/json/version`)
             if (response.ok) {
                 const version = await response.json()
-                console.log(`🌐 Chrome调试端口可用: ${version.Browser} (端口:${port})`)
+                console.log(`🌐 Chrome调试端口可用: ${version.Browser}`)
                 return true
             }
             return false
         } catch (error) {
-            console.error(`❌ Chrome调试端口检查失败 (端口:${port}): ${error.message}`)
+            console.error(`❌ Chrome调试端口检查失败: ${error.message}`)
             return false
         }
     }
@@ -417,10 +393,9 @@ export class ChromeController {
     /**
      * 获取浏览器信息
      */
-    async getBrowserInfo(debugPort = null) {
-        const port = debugPort || this.config.debugPort
+    async getBrowserInfo() {
         try {
-            const response = await fetch(`http://localhost:${port}/json/version`)
+            const response = await fetch(`http://localhost:${this.config.debugPort}/json/version`)
             const info = await response.json()
             return {
                 browser: info.Browser,

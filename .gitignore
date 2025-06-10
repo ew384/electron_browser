@@ -10,3 +10,4 @@ yarn-error.log*
 electron/dist/
 server/dist/
 automation/output/
+automation/test/output/
