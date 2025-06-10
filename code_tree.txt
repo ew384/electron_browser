@@ -8,9 +8,23 @@
 │   │   └── automation-cli.js
 │   ├── config
 │   │   ├── account-example.json
+│   │   ├── platforms.js
+│   │   ├── templates
 │   │   ├── video-template.json
 │   │   └── workflows.json
+│   ├── core
+│   │   ├── chrome-controller.js
+│   │   ├── content-processor.js
+│   │   ├── file-uploader.js
+│   │   ├── index.js
+│   │   ├── template-engine.js
+│   │   └── workflow-engine.js
 │   ├── debug-page-elements.js
+│   ├── engines
+│   │   ├── base-publisher.js
+│   │   ├── douyin-video-publisher.js
+│   │   ├── multi-platform-engine.js
+│   │   └── wechat-video-publisher.js
 │   ├── images
 │   ├── integration
 │   │   └── browser-integration.js
@@ -23,6 +37,8 @@
 │   ├── test
 │   │   └── automation-test.js
 │   ├── uploads
+│   ├── utils
+│   │   └── element-analyzer.js
 │   ├── video-account.json
 │   ├── video-accounts.json
 │   ├── video-content.json
@@ -30,13 +46,6 @@
 │   │   └── sample.mp4
 │   ├── video-template.json
 │   └── wechat-publisher
-│       ├── chrome-controller.js
-│       ├── content-processor.js
-│       ├── element-analyzer.js
-│       ├── file-uploader.js
-│       ├── index.js
-│       ├── template-engine.js
-│       └── workflow-engine.js
 ├── code_tree.txt
 ├── data
 ├── electron
@@ -334,4 +343,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-110 directories, 224 files
+114 directories, 229 files
