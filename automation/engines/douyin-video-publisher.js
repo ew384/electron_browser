@@ -1,3 +1,5 @@
+// ============ 修复后的 douyin-video-publisher.js ============
+// automation/engines/douyin-video-publisher.js
 import { BasePublisher } from './base-publisher.js'
 
 export class DouyinVideoPublisher extends BasePublisher {

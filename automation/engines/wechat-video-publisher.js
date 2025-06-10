@@ -1,3 +1,5 @@
+// ============ 修复后的 wechat-video-publisher.js ============
+// automation/engines/wechat-video-publisher.js
 import { BasePublisher } from './base-publisher.js'
 
 export class WeChatVideoPublisher extends BasePublisher {
