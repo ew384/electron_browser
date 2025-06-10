@@ -2,7 +2,7 @@ import { ChromeController } from './chrome-controller.js'
 import { WorkflowEngine } from './workflow-engine.js'
 import { ContentProcessor } from './content-processor.js'
 import { TemplateEngine } from './template-engine.js'
-import { MultiPlatformEngine } from '../engines/multi-platform-engine.js'
+import { MultiPlatformPublisher } from '../engines/multi-platform-engine.js'
 import { getPlatformConfig } from '../config/platforms.js'
 import path from 'path'
 import fs from 'fs'
@@ -29,7 +29,7 @@ export class UniversalPublisher {
         this.templateEngine = new TemplateEngine(this.config)
 
         // 初始化多平台发布引擎
-        this.multiPlatformEngine = new MultiPlatformEngine()
+        this.multiPlatformEngine = new MultiPlatformPublisher()
         this.multiPlatformEngine.initializePublishers()
 
         this.initOutputDir()
@@ -300,5 +300,5 @@ export {
     WorkflowEngine,
     ContentProcessor,
     TemplateEngine,
-    MultiPlatformEngine
+    MultiPlatformPublisher
 }
