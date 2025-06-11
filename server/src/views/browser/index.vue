@@ -1,23 +1,21 @@
-<!-- eslint-disable -->
+<!-- ESLint修复后的 browser/index.vue -->
 <template>
   <div class="browser-container">
     <!-- 调试信息 -->
     <div v-if="debugMode" class="debug-info">
-      <p>API状态: {{ apiStatus }}</p>
+      <p>HTTP API状态: {{ httpApiStatus }}</p>
+      <p>IPC API状态: {{ ipcApiStatus }}</p>
       <p>数据源: {{ dataSource }}</p>
-      <p>Electron API 可用: {{ isElectronAvailable ? '是' : '否' }}</p>
       <p>浏览器数量: {{ browserList.length }}</p>
       <p>运行中实例: {{ browserList.filter(b => b.status === 'running').length }}</p>
       <p>最后更新: {{ lastUpdateTime }}</p>
     </div>
-  
+
     <!-- 状态栏 -->
-    <div class="status-bar" v-if="apiStatus">
-      <el-alert :title="apiStatus"
-        :type="dataSource === 'rpa-platform' ? 'success' : dataSource === 'electron-direct' ? 'warning' : 'error'"
-        :closable="false" show-icon />
+    <div v-if="overallStatus" class="status-bar">
+      <el-alert :title="overallStatus" :type="overallStatusType" :closable="false" show-icon />
     </div>
-  
+
     <!-- 工具栏 -->
     <div class="toolbar">
       <el-button type="primary" icon="el-icon-plus" @click="showCreateDialog">
@@ -26,13 +24,16 @@
       <el-button icon="el-icon-refresh" @click="refreshList">
         {{ $t('browser.refresh') }}
       </el-button>
-      <el-button icon="el-icon-bug" @click="toggleDebug">
-        调试模式
-      </el-button>
+      <el-button icon="el-icon-bug" @click="toggleDebug">调试模式</el-button>
     </div>
-  
+
     <!-- 浏览器列表 -->
-    <el-table v-loading="loading" :data="browserList" style="width: 100%" @row-dblclick="handleRowDblClick">
+    <el-table
+      v-loading="loading"
+      :data="browserList"
+      style="width: 100%"
+      @row-dblclick="handleRowDblClick"
+    >
       <el-table-column prop="id" label="ID" width="180" />
       <el-table-column prop="name" :label="$t('browser.name')" min-width="120" />
       <el-table-column prop="group" :label="$t('browser.group')" width="120">
@@ -48,14 +49,18 @@
           </el-tag>
         </template>
       </el-table-column>
-  
+
       <!-- 调试端口 -->
       <el-table-column label="调试端口" width="120">
         <template slot-scope="scope">
           <div v-if="scope.row.status === 'running' && scope.row.debugPort">
             <el-tooltip :content="`点击复制端口 ${scope.row.debugPort}`" placement="top">
-              <el-tag type="success" size="small" @click="copyPort(scope.row.debugPort)"
-                style="cursor: pointer; font-family: monospace;">
+              <el-tag
+                type="success"
+                size="small"
+                style="cursor: pointer; font-family: monospace"
+                @click="copyPort(scope.row.debugPort)"
+              >
                 {{ scope.row.debugPort }}
               </el-tag>
             </el-tooltip>
@@ -68,41 +73,44 @@
           </div>
         </template>
       </el-table-column>
-  
+
       <!-- 标签页数量 -->
       <el-table-column label="标签页" width="80">
         <template slot-scope="scope">
           <span v-if="scope.row.status === 'running' && scope.row.tabsCount >= 0">
             {{ scope.row.tabsCount }}
           </span>
-          <span v-else style="color: #909399;">-</span>
+          <span v-else style="color: #909399">-</span>
         </template>
       </el-table-column>
-  
+
       <!-- 当前URL -->
       <el-table-column label="当前页面" min-width="200">
         <template slot-scope="scope">
           <div v-if="scope.row.url">
             <el-tooltip :content="scope.row.url" placement="top">
-              <span style="color: #409eff; cursor: pointer; font-size: 12px;" @click="openUrl(scope.row.url)">
+              <span
+                style="color: #409eff; cursor: pointer; font-size: 12px"
+                @click="openUrl(scope.row.url)"
+              >
                 {{ truncateUrl(scope.row.url) }}
               </span>
             </el-tooltip>
           </div>
-          <span v-else style="color: #909399;">-</span>
+          <span v-else style="color: #909399">-</span>
         </template>
       </el-table-column>
-  
+
       <!-- Chrome版本 -->
       <el-table-column label="Chrome版本" width="120">
         <template slot-scope="scope">
-          <span v-if="scope.row.chromeVersion" style="font-size: 12px; color: #606266;">
+          <span v-if="scope.row.chromeVersion" style="font-size: 12px; color: #606266">
             {{ extractChromeVersion(scope.row.chromeVersion) }}
           </span>
-          <span v-else style="color: #909399;">-</span>
+          <span v-else style="color: #909399">-</span>
         </template>
       </el-table-column>
-  
+
       <el-table-column :label="$t('browser.fingerprint')" width="120">
         <template slot-scope="scope">
           <el-button type="text" size="small" @click="showFingerprintDialog(scope.row)">
@@ -110,10 +118,15 @@
           </el-button>
         </template>
       </el-table-column>
-  
+
       <el-table-column :label="$t('browser.actions')" width="300" fixed="right">
         <template slot-scope="scope">
-          <el-button v-if="scope.row.status !== 'running'" type="primary" size="small" @click="launchBrowser(scope.row)">
+          <el-button
+            v-if="scope.row.status !== 'running'"
+            type="primary"
+            size="small"
+            @click="launchBrowser(scope.row)"
+          >
             {{ $t('browser.launch') }}
           </el-button>
           <el-button v-else type="danger" size="small" @click="closeBrowser(scope.row)">
@@ -128,23 +141,37 @@
         </template>
       </el-table-column>
     </el-table>
-  
+
     <!-- 创建/编辑对话框 -->
-    <el-dialog :title="editMode ? $t('browser.edit') : $t('browser.create')" :visible.sync="dialogVisible" width="600px">
+    <el-dialog
+      :title="editMode ? $t('browser.edit') : $t('browser.create')"
+      :visible.sync="dialogVisible"
+      width="600px"
+    >
       <el-form ref="browserForm" :model="browserForm" :rules="rules" label-width="120px">
         <el-form-item :label="$t('browser.name')" prop="name">
           <el-input v-model="browserForm.name" />
         </el-form-item>
         <el-form-item :label="$t('browser.group')">
           <el-select v-model="browserForm.group" clearable>
-            <el-option v-for="group in groupList" :key="group.id" :label="group.name" :value="group.name" />
+            <el-option
+              v-for="group in groupList"
+              :key="group.id"
+              :label="group.name"
+              :value="group.name"
+            />
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('browser.proxy')">
           <el-input v-model="browserForm.proxy" placeholder="http://127.0.0.1:8080" />
         </el-form-item>
         <el-form-item :label="$t('browser.userAgent')">
-          <el-input v-model="browserForm.userAgent" type="textarea" :rows="3" placeholder="留空使用默认值" />
+          <el-input
+            v-model="browserForm.userAgent"
+            type="textarea"
+            :rows="3"
+            placeholder="留空使用默认值"
+          />
         </el-form-item>
       </el-form>
       <div slot="footer">
@@ -152,9 +179,13 @@
         <el-button type="primary" @click="saveBrowser">{{ $t('common.save') }}</el-button>
       </div>
     </el-dialog>
-  
+
     <!-- 指纹详情对话框 -->
-    <el-dialog :title="$t('browser.fingerprintDetails')" :visible.sync="fingerprintDialogVisible" width="800px">
+    <el-dialog
+      :title="$t('browser.fingerprintDetails')"
+      :visible.sync="fingerprintDialogVisible"
+      width="800px"
+    >
       <pre v-if="currentFingerprint">{{ JSON.stringify(currentFingerprint, null, 2) }}</pre>
       <div slot="footer">
         <el-button @click="fingerprintDialogVisible = false">{{ $t('common.close') }}</el-button>
@@ -169,6 +200,8 @@
 <script>
 import { getGroupList } from '@/api/native'
 
+const HTTP_API_BASE = 'http://localhost:9528/api'
+
 export default {
   name: 'BrowserList',
   data() {
@@ -180,8 +213,9 @@ export default {
       editMode: false,
       debugMode: false,
       lastUpdateTime: '',
-      apiStatus: '', // API状态信息
-      dataSource: '', // 数据来源标识
+      httpApiStatus: '',
+      ipcApiStatus: '',
+      dataSource: '',
       browserForm: {
         id: '',
         name: '',
@@ -199,6 +233,22 @@ export default {
     }
   },
   computed: {
+    overallStatus() {
+      if (this.httpApiStatus.includes('✅') && this.ipcApiStatus.includes('✅')) {
+        return '✅ HTTP API + IPC API 均可用'
+      } else if (this.httpApiStatus.includes('✅')) {
+        return '✅ HTTP API可用'
+      } else if (this.ipcApiStatus.includes('✅')) {
+        return '✅ IPC API可用'
+      } else {
+        return '❌ 所有API均不可用'
+      }
+    },
+    overallStatusType() {
+      if (this.overallStatus.includes('✅')) return 'success'
+      if (this.overallStatus.includes('⚠️')) return 'warning'
+      return 'error'
+    },
     isElectronAvailable() {
       return typeof window !== 'undefined' && window.electronAPI
     }
@@ -214,31 +264,41 @@ export default {
       await this.refreshList()
     },
 
-    // 检查API状态
     async checkApiStatus() {
       try {
-        // 检查RPA Platform API和Electron API状态
-        const response = await fetch('http://localhost:3001/api/electron/status')
+        console.log('[BrowserList] 检查HTTP API状态...')
+        const response = await fetch(`${HTTP_API_BASE}/health`, {
+          method: 'GET',
+          timeout: 3000
+        })
+
         if (response.ok) {
           const result = await response.json()
-          if (result.available) {
-            this.apiStatus = '✅ RPA Platform + Electron API 可用'
-            this.dataSource = 'rpa-platform'
-          } else {
-            this.apiStatus = '⚠️ RPA Platform可用，Electron API不可用'
-            this.dataSource = 'electron-direct'
-          }
+          this.httpApiStatus = `✅ HTTP API运行正常 (端口${result.port || 9528})`
+          console.log('[BrowserList] HTTP API可用:', result)
         } else {
-          throw new Error('RPA Platform API不可用')
+          throw new Error(`HTTP ${response.status}`)
         }
       } catch (error) {
+        this.httpApiStatus = `❌ HTTP API连接失败: ${error.message}`
+        console.error('[BrowserList] HTTP API不可用:', error)
+      }
+
+      try {
         if (this.isElectronAvailable) {
-          this.apiStatus = '⚠️ 仅Electron直接API可用'
-          this.dataSource = 'electron-direct'
+          const testResult = await window.electronAPI.getAccounts()
+          if (testResult && typeof testResult === 'object') {
+            this.ipcApiStatus = '✅ IPC API可用'
+            console.log('[BrowserList] IPC API可用')
+          } else {
+            throw new Error('IPC调用返回异常')
+          }
         } else {
-          this.apiStatus = '❌ 所有API均不可用'
-          this.dataSource = 'none'
+          throw new Error('Electron环境不可用')
         }
+      } catch (error) {
+        this.ipcApiStatus = `❌ IPC API不可用: ${error.message}`
+        console.error('[BrowserList] IPC API不可用:', error)
       }
     },
 
@@ -252,6 +312,7 @@ export default {
         console.log('[BrowserList] Loaded groups:', this.groupList.length)
       } catch (error) {
         console.error('[BrowserList] Failed to load groups:', error)
+        this.groupList = []
       }
     },
 
@@ -260,12 +321,12 @@ export default {
       this.loading = true
 
       try {
-        if (this.dataSource === 'rpa-platform') {
-          // 优先使用 RPA Platform API (通过Electron HTTP API)
-          await this.loadFromRpaPlatform()
-        } else if (this.dataSource === 'electron-direct') {
-          // 直接使用 Electron API
-          await this.loadFromElectronDirect()
+        if (this.httpApiStatus.includes('✅')) {
+          await this.loadFromHttpApi()
+          this.dataSource = 'http-api'
+        } else if (this.ipcApiStatus.includes('✅')) {
+          await this.loadFromIpcApi()
+          this.dataSource = 'ipc-api'
         } else {
           throw new Error('没有可用的API')
         }
@@ -273,14 +334,19 @@ export default {
         console.error('[BrowserList] Failed to refresh list:', error)
         this.$message.error('获取浏览器列表失败: ' + error.message)
         this.browserList = []
+        this.dataSource = 'none'
       } finally {
         this.loading = false
       }
     },
 
-    // 从RPA Platform API加载数据 (推荐方式)
-    async loadFromRpaPlatform() {
-      const response = await fetch('http://localhost:3001/api/browsers')
+    async loadFromHttpApi() {
+      console.log('[BrowserList] Loading from HTTP API...')
+
+      const response = await fetch(`${HTTP_API_BASE}/browsers`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      })
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -288,61 +354,53 @@ export default {
 
       const result = await response.json()
       if (!result.success) {
-        throw new Error(result.error || 'RPA API返回失败')
+        throw new Error(result.error || 'HTTP API返回失败')
       }
 
-      this.browserList = result.browsers.map(browser => ({
-        id: browser.id,
-        name: browser.name,
-        group: browser.group,
-        status: browser.status,
-        debugPort: browser.debugPort,
-        url: browser.url,
-        tabsCount: browser.tabsCount,
-        chromeVersion: browser.chromeVersion,
-        lastActive: browser.lastActive,
-        createdAt: browser.createdAt,
-        config: browser.config || {}
-      }))
-
+      this.browserList = result.browsers || []
       this.lastUpdateTime = new Date().toLocaleTimeString()
-      console.log('[BrowserList] Browser list updated from RPA Platform:', this.browserList.length)
 
-      // 显示统计信息
+      console.log('[BrowserList] ✅ 从HTTP API加载了', this.browserList.length, '个浏览器')
+
       if (result.statistics) {
         const { running, total } = result.statistics
-        if (running > 0) {
-          this.$message.success(
-            `✅ 通过RPA Platform获取到 ${running}/${total} 个运行中的浏览器实例`
-          )
-        } else if (total > 0) {
-          this.$message.info(`📋 共有 ${total} 个浏览器实例，当前均未运行`)
-        }
+        this.$message.success(`✅ HTTP API: ${running}/${total} 个浏览器运行中`)
       }
     },
 
-    // 直接从Electron API加载数据 (备选方案)
-    async loadFromElectronDirect() {
-      if (!this.isElectronAvailable) {
-        throw new Error('Electron API 不可用')
-      }
+    async loadFromIpcApi() {
+      console.log('[BrowserList] Loading from IPC API...')
 
       const result = await window.electronAPI.getAccounts()
-
       if (!result || !result.success) {
-        throw new Error(result?.error || 'Electron API调用失败')
+        throw new Error(result?.error || 'IPC API调用失败')
       }
 
       this.browserList = result.accounts || []
       this.lastUpdateTime = new Date().toLocaleTimeString()
-      console.log('[BrowserList] Browser list updated from Electron API:', this.browserList.length)
 
-      // 获取端口信息
+      console.log('[BrowserList] ✅ 从IPC API加载了', this.browserList.length, '个浏览器')
+
       await this.updatePorts()
 
       const runningCount = this.browserList.filter(b => b.status === 'running').length
-      if (runningCount > 0) {
-        this.$message.success(`✅ 通过Electron直接API获取到 ${runningCount} 个运行中的实例`)
+      this.$message.success(`✅ IPC API: ${runningCount}/${this.browserList.length} 个浏览器运行中`)
+    },
+
+    async updatePorts() {
+      if (this.dataSource !== 'ipc-api') return
+
+      for (const browser of this.browserList) {
+        if (browser.status === 'running' && !browser.debugPort) {
+          try {
+            const result = await window.electronAPI.getChromeDebugPort(browser.id)
+            if (result?.success && result.port) {
+              this.$set(browser, 'debugPort', result.port)
+            }
+          } catch (error) {
+            console.error('获取端口失败:', error)
+          }
+        }
       }
     },
 
@@ -417,7 +475,6 @@ export default {
         if (result && result.success) {
           this.$message.success('浏览器启动成功')
           browser.status = 'running'
-          // 刷新列表以获取最新状态
           setTimeout(async () => {
             await this.refreshList()
           }, 2000)
@@ -443,7 +500,6 @@ export default {
           this.$message.success('浏览器已关闭')
           browser.status = 'idle'
           browser.debugPort = undefined
-          // 刷新列表以获取最新状态
           setTimeout(async () => {
             await this.refreshList()
           }, 1000)
@@ -486,19 +542,17 @@ export default {
       if (row.status !== 'running') {
         this.launchBrowser(row)
       } else {
-        // 如果正在运行，显示更多信息
         this.showBrowserDetails(row)
       }
     },
 
-    // 新增：显示浏览器详情
     async showBrowserDetails(browser) {
       if (browser.debugPort) {
         try {
-          const response = await fetch(`http://localhost:3001/api/browsers/${browser.id}/tabs`)
+          const response = await fetch(`${HTTP_API_BASE}/browser/${browser.id}/tabs`)
           if (response.ok) {
             const result = await response.json()
-            if (result.success && result.tabs.length > 0) {
+            if (result.success && result.tabs && result.tabs.length > 0) {
               const tabsInfo = result.tabs.map(tab => `${tab.title} (${tab.url})`).join('\n')
               this.$alert(
                 `调试端口: ${browser.debugPort}\n标签页数: ${result.tabs.length}\n\n${tabsInfo}`,
@@ -532,7 +586,6 @@ export default {
         if (result && result.success) {
           this.currentFingerprint = result.config
           this.$message.success('指纹已重新生成')
-          // 更新浏览器配置
           const browser = this.browserList.find(b => b.id === this.currentBrowserId)
           if (browser) {
             browser.config = browser.config || {}
@@ -544,7 +597,6 @@ export default {
       }
     },
 
-    // 复制端口号
     copyPort(port) {
       navigator.clipboard
         .writeText(port.toString())
@@ -556,44 +608,20 @@ export default {
         })
     },
 
-    // 获取端口信息 (仅在直接Electron API模式下使用)
-    async updatePorts() {
-      if (this.dataSource !== 'electron-direct') return
-
-      for (const browser of this.browserList) {
-        if (browser.status === 'running' && !browser.debugPort) {
-          try {
-            const result = await window.electronAPI.getChromeDebugPort(browser.id)
-            if (result?.success && result.port) {
-              this.$set(browser, 'debugPort', result.port)
-            }
-          } catch (error) {
-            console.error('获取端口失败:', error)
-          }
-        }
-      }
-    },
-
-    // 现有的refreshList方法已经包含了所有刷新逻辑，无需额外的强制刷新方法
-
-    // 辅助方法：截断URL显示
     truncateUrl(url) {
       if (!url) return '-'
       if (url.length <= 50) return url
       return url.substring(0, 47) + '...'
     },
 
-    // 提取Chrome版本号
     extractChromeVersion(versionString) {
       if (!versionString) return '-'
 
-      // 从类似 "Chrome/120.0.6099.109" 的字符串中提取版本号
       const match = versionString.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/)
       if (match) {
         return match[1]
       }
 
-      // 如果是完整的版本对象，尝试提取
       if (typeof versionString === 'string' && versionString.includes('.')) {
         return versionString.split(' ')[0]
       }
@@ -601,7 +629,6 @@ export default {
       return versionString.toString().substring(0, 20)
     },
 
-    // 打开URL
     openUrl(url) {
       if (url && (url.startsWith('http') || url.startsWith('https'))) {
         window.open(url, '_blank')
