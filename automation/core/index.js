@@ -30,7 +30,7 @@ export class UniversalPublisher {
         this.contentProcessor = new ContentProcessor(this.config)
         this.templateEngine = new TemplateEngine(this.config)
         this.multiPlatformEngine = new MultiPlatformPublisher()
-
+        this.multiPlatformEngine.setChromeController(this.chromeController)
         this.initOutputDir()
         console.log('🚀 UniversalPublisher 初始化完成 (并发支持版本)')
         this.logDebugInfo()

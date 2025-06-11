@@ -7,8 +7,11 @@ export class MultiPlatformPublisher {
     constructor() {
         this.publishers = new Map()
         this.initializePublishers()
+        this.chromeController = null
     }
-
+    setChromeController(chromeController) {
+        this.chromeController = chromeController
+    }
     initializePublishers() {
         this.publishers.set('wechat', WeChatVideoPublisher)
         this.publishers.set('douyin', DouyinVideoPublisher)
@@ -121,8 +124,7 @@ export class MultiPlatformPublisher {
             }
 
             // 使用会话创建发布器实例
-            const publisher = new PublisherClass(session, platformConfig)
-
+            const publisher = new PublisherClass(session, platformConfig, this.chromeController)
             // 执行发布流程
             const stepResults = {}
 
@@ -227,7 +229,7 @@ export class MultiPlatformPublisher {
                 throw new Error(`平台 ${platformId} 的发布器未实现`)
             }
 
-            const publisher = new PublisherClass(session, platformConfig)
+            const publisher = new PublisherClass(session, platformConfig, this.chromeController)
 
             console.log(`📤 步骤1: 上传文件到 ${platformId}`)
             const uploadResult = await publisher.uploadFile(filePath)

@@ -5,8 +5,9 @@ import fs from 'fs'
 import path from 'path'
 
 export class WeChatVideoPublisher {
-    constructor(session, platformConfig) {
+    constructor(session, platformConfig, chromeController) {
         this.session = session
+        this.chromeController = chromeController
         this.config = platformConfig
         this.selectors = platformConfig.selectors
         this.features = platformConfig.features
@@ -829,7 +830,7 @@ export class WeChatVideoPublisher {
     }
 
     async executeScript(script) {
-        return await this.session.chromeController.executeScript(this.session, script)
+        return await this.chromeController.executeScript(this.session, script)
     }
 
     async delay(ms) {

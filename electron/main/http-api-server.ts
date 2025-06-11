@@ -192,8 +192,36 @@ export class HttpApiServer {
     }
 
     // ==================== 🔧 新增：标签页管理方法 ====================
+    // 获取标签页列表 - 最小化实现
+    private async handleGetTabs(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
+                return;
+            }
 
-    // 创建新标签页
+            const tabs = await this.getChromeTabsInfo(port);
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                tabs: tabs,
+                totalTabs: tabs.length,
+                managedTabs: 0
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Get tabs error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+    // 创建新标签页 
     private async handleCreateTab(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
         try {
             const port = this.windowManager.getChromeDebugPort(accountId);
@@ -206,18 +234,15 @@ export class HttpApiServer {
             const body = await this.readRequestBody(req);
             const { url, platform } = JSON.parse(body);
 
-            // 创建新标签页
-            const result = await this.sendCDPCommand(port, '', 'Target.createTarget', {
-                url: url || 'about:blank'
-            });
+            // 🔧 使用PUT方法创建标签页
+            const newTabUrl = `http://localhost:${port}/json/new?${encodeURIComponent(url || 'about:blank')}`;
+            const tabData = await this.httpRequestPUT(newTabUrl);
+            const tabInfo = JSON.parse(tabData);
 
-            const tabId = result.targetId;
-
-            // 注册标签页会话
-            const sessionKey = `${accountId}-${tabId}`;
+            const sessionKey = `${accountId}-${tabInfo.id}`;
             this.tabSessions.set(sessionKey, {
                 accountId,
-                tabId,
+                tabId: tabInfo.id,
                 platform: platform || 'unknown',
                 createdAt: Date.now(),
                 lastUsed: Date.now()
@@ -226,7 +251,7 @@ export class HttpApiServer {
             res.writeHead(200);
             res.end(JSON.stringify({
                 success: true,
-                tabId: tabId,
+                tabId: tabInfo.id,
                 sessionKey: sessionKey,
                 url: url
             }));
@@ -241,48 +266,26 @@ export class HttpApiServer {
         }
     }
 
-    // 获取标签页列表
-    private async handleGetTabs(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
-        try {
-            const port = this.windowManager.getChromeDebugPort(accountId);
-            if (!port) {
-                res.writeHead(404);
-                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
-                return;
-            }
+    // PUT请求方法
+    private httpRequestPUT(url: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const http = require('http');
+            const urlObj = new URL(url);
 
-            const tabs = await this.getChromeTabsInfo(port);
-
-            // 添加会话信息
-            const tabsWithSessions = tabs.map(tab => {
-                const sessionKey = `${accountId}-${tab.id}`;
-                const session = this.tabSessions.get(sessionKey);
-
-                return {
-                    ...tab,
-                    sessionKey: session ? sessionKey : null,
-                    platform: session?.platform || null,
-                    createdAt: session?.createdAt || null,
-                    lastUsed: session?.lastUsed || null
-                };
+            const req = http.request({
+                hostname: urlObj.hostname,
+                port: urlObj.port,
+                path: urlObj.pathname + urlObj.search,
+                method: 'PUT'
+            }, (res: any) => {
+                let data = '';
+                res.on('data', (chunk: any) => data += chunk);
+                res.on('end', () => resolve(data));
             });
 
-            res.writeHead(200);
-            res.end(JSON.stringify({
-                success: true,
-                tabs: tabsWithSessions,
-                totalTabs: tabs.length,
-                managedTabs: Array.from(this.tabSessions.values()).filter(s => s.accountId === accountId).length
-            }));
-
-        } catch (error) {
-            console.error('[HttpApiServer] Get tabs error:', error);
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            }));
-        }
+            req.on('error', reject);
+            req.end();
+        });
     }
 
     // 关闭标签页
