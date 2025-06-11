@@ -1,6 +1,4 @@
-// automation/core/index.js - 修复版本
-// 移除端口硬编码，集成动态端口获取
-
+// automation/core/index.js - 并发支持集成版本
 import { ChromeController } from './chrome-controller.js'
 import { ContentProcessor } from './content-processor.js'
 import { TemplateEngine } from './template-engine.js'
@@ -9,25 +7,21 @@ import { getPlatformConfig } from '../config/platforms.js'
 import path from 'path'
 import fs from 'fs'
 
-/**
- * 修复版发布器 - 集成动态端口获取
- */
 export class UniversalPublisher {
     constructor(options = {}) {
         this.config = {
-            // 🔧 修复：移除硬编码端口，改为可选配置
-            debugPort: options.debugPort || null, // null表示动态获取
             electronApiUrl: options.electronApiUrl || 'http://localhost:9528',
             timeout: options.timeout || 15000,
             retryAttempts: options.retryAttempts || 3,
             outputDir: options.outputDir || './output',
-            autoPublish: options.autoPublish !== false, // 默认启用自动发布
+            autoPublish: options.autoPublish !== false,
+            // 🔧 新增：并发配置
+            enableConcurrency: options.enableConcurrency !== false,
+            maxConcurrentPlatforms: options.maxConcurrentPlatforms || 4,
             ...options
         }
 
-        // 🔧 修复：传递完整配置给ChromeController
         this.chromeController = new ChromeController({
-            debugPort: this.config.debugPort,
             electronApiUrl: this.config.electronApiUrl,
             timeout: this.config.timeout,
             retryAttempts: this.config.retryAttempts
@@ -35,139 +29,117 @@ export class UniversalPublisher {
 
         this.contentProcessor = new ContentProcessor(this.config)
         this.templateEngine = new TemplateEngine(this.config)
-
-        // 初始化精简版多平台发布引擎
         this.multiPlatformEngine = new MultiPlatformPublisher()
 
         this.initOutputDir()
-        console.log('🚀 UniversalPublisher 初始化完成 (动态端口版本)')
-
-        // 🔧 新增：启动时显示调试信息
+        console.log('🚀 UniversalPublisher 初始化完成 (并发支持版本)')
         this.logDebugInfo()
     }
 
-    initOutputDir() {
-        if (!fs.existsSync(this.config.outputDir)) {
-            fs.mkdirSync(this.config.outputDir, { recursive: true })
-        }
-    }
-
-    /**
-     * 🔧 新增：启动时显示调试信息
-     */
-    async logDebugInfo() {
-        try {
-            const debugInfo = await this.chromeController.getDebugInfo()
-            console.log('🔍 系统状态:')
-            console.log(`   Electron API: ${debugInfo.apiAvailable ? '✅ 可用' : '❌ 不可用'}`)
-            console.log(`   API地址: ${debugInfo.apiEndpoint}`)
-            console.log(`   浏览器实例: ${debugInfo.browsersCount || 0} 个`)
-            console.log(`   运行中: ${debugInfo.runningBrowsers || 0} 个`)
-
-            if (debugInfo.availablePorts && debugInfo.availablePorts.length > 0) {
-                console.log('   可用端口:')
-                debugInfo.availablePorts.forEach(port => {
-                    console.log(`     - ${port.accountId}: ${port.port} (${port.status})`)
-                })
-            }
-        } catch (error) {
-            console.log('⚠️ 获取调试信息失败:', error.message)
-        }
-    }
-
-    /**
-     * 发布到单个平台 - 修复版本
-     */
-    async publish(platformId, workflowType, content, template, account) {
-        console.log(`📱 开始发布 ${workflowType} 到 ${platformId} 平台: ${account.id}`)
+    // 🔧 新增：并发多平台发布（主要方法）
+    async publishMultiPlatformConcurrent(platforms, workflowType, content, template, accounts) {
+        console.log(`📦 并发批量发布 ${workflowType} 到 ${platforms.length} 个平台`)
 
         try {
             // 1. 验证参数
-            this.validateInput(platformId, workflowType, content, template)
-
-            // 2. 🔧 修复：处理账号配置，移除硬编码端口
-            const processedAccount = this.processAccountConfig(account)
-
-            // 3. 处理内容
-            const processedContent = await this.contentProcessor.process(content, workflowType)
-
-            // 4. 渲染模板
-            const renderData = await this.templateEngine.render(template, processedContent, processedAccount)
-
-            console.log('📋 渲染后的内容:')
-            Object.entries(renderData).forEach(([key, value]) => {
-                if (typeof value === 'string' && value.length < 100) {
-                    console.log(`   ${key}: ${value}`)
-                }
-            })
-
-            // 5. 🔧 修复：启动浏览器会话（动态端口）
-            console.log('🔗 创建浏览器会话（动态端口）...')
-            const session = await this.chromeController.createSession(processedAccount)
-            session.chromeController = this.chromeController
-
-            console.log(`✅ 会话创建成功，使用端口: ${session.debugPort}`)
-
-            // 6. 直接使用多平台发布引擎
-            const result = await this.multiPlatformEngine.publishToPlatform(
-                platformId,
-                session,
-                renderData,
-                content.videoFile || content.file
-            )
-
-            // 7. 保存结果
-            await this.saveResult(platformId, workflowType, result, processedAccount)
-
-            // 8. 清理会话
-            await this.chromeController.closeSession(session.id)
-
-            console.log(`✅ ${platformId} ${workflowType} 发布完成`)
-            return result
-
-        } catch (error) {
-            console.error(`❌ ${platformId} ${workflowType} 发布失败:`, error.message)
-
-            // 🔧 新增：提供详细的错误诊断
-            await this.diagnoseError(error)
-
-            throw error
-        }
-    }
-
-    /**
-     * 多平台并行发布 - 修复版本
-     */
-    async publishMultiPlatform(platforms, workflowType, content, template, accounts) {
-        console.log(`📦 批量发布 ${workflowType} 到 ${platforms.length} 个平台`)
-
-        try {
-            // 验证参数
             if (platforms.length !== accounts.length) {
                 throw new Error(`平台数量(${platforms.length})与账号数量(${accounts.length})不匹配`)
             }
 
-            // 🔧 修复：处理账号配置
+            // 2. 处理内容和模板
+            const processedContent = await this.contentProcessor.process(content, workflowType)
             const processedAccounts = accounts.map(account => this.processAccountConfig(account))
 
-            // 处理内容
-            const processedContent = await this.contentProcessor.process(content, workflowType)
+            // 3. 渲染模板（使用第一个账号作为基准）
+            const renderData = await this.templateEngine.render(template, processedContent, processedAccounts[0])
 
-            // 创建浏览器会话（每个账号对应一个会话）
+            // 4. 检查并发限制
+            const concurrentGroups = this.splitIntoConcurrentGroups(platforms, processedAccounts, this.config.maxConcurrentPlatforms)
+
+            console.log(`🔧 并发配置: ${concurrentGroups.length} 组, 每组最多 ${this.config.maxConcurrentPlatforms} 个平台`)
+
+            // 5. 逐组并发执行
+            const allResults = []
+            for (let groupIndex = 0; groupIndex < concurrentGroups.length; groupIndex++) {
+                const group = concurrentGroups[groupIndex]
+                console.log(`\n📦 执行第 ${groupIndex + 1}/${concurrentGroups.length} 组 (${group.platforms.length} 个平台)`)
+
+                try {
+                    const groupResult = await this.multiPlatformEngine.publishToMultiplePlatformsConcurrent(
+                        group.platforms,
+                        group.accounts,
+                        renderData,
+                        content.videoFile || content.file,
+                        this.chromeController
+                    )
+
+                    allResults.push({
+                        groupIndex: groupIndex + 1,
+                        ...groupResult
+                    })
+
+                    // 组间延迟（避免系统过载）
+                    if (groupIndex < concurrentGroups.length - 1) {
+                        console.log('⏳ 组间等待 5 秒...')
+                        await this.delay(5000)
+                    }
+
+                } catch (error) {
+                    console.error(`❌ 第 ${groupIndex + 1} 组执行失败:`, error.message)
+                    allResults.push({
+                        groupIndex: groupIndex + 1,
+                        success: false,
+                        error: error.message,
+                        platforms: group.platforms,
+                        accounts: group.accounts.map(a => a.id)
+                    })
+                }
+            }
+
+            // 6. 汇总所有结果
+            const finalResult = this.aggregateGroupResults(allResults, platforms, processedAccounts)
+
+            // 7. 保存结果
+            await this.saveMultiPlatformResult(finalResult, workflowType)
+
+            console.log(`📊 并发批量发布完成: 总成功 ${finalResult.totalSuccessCount}/${finalResult.totalPlatforms}`)
+            return finalResult
+
+        } catch (error) {
+            console.error('❌ 并发多平台发布失败:', error.message)
+            await this.diagnoseError(error)
+            throw error
+        }
+    }
+
+    // 🔧 保留：原有多平台发布方法（兼容性）
+    async publishMultiPlatform(platforms, workflowType, content, template, accounts) {
+        if (this.config.enableConcurrency) {
+            console.log('🔄 使用并发模式')
+            return await this.publishMultiPlatformConcurrent(platforms, workflowType, content, template, accounts)
+        } else {
+            console.log('🔄 使用串行模式 (兼容)')
+            return await this.publishMultiPlatformSerial(platforms, workflowType, content, template, accounts)
+        }
+    }
+
+    // 🔧 保留：串行发布方法（向后兼容）
+    async publishMultiPlatformSerial(platforms, workflowType, content, template, accounts) {
+        console.log(`📦 串行批量发布 ${workflowType} 到 ${platforms.length} 个平台`)
+
+        try {
+            const processedContent = await this.contentProcessor.process(content, workflowType)
+            const processedAccounts = accounts.map(account => this.processAccountConfig(account))
+
             const sessions = []
             for (let i = 0; i < processedAccounts.length; i++) {
                 console.log(`🔗 为账号 ${processedAccounts[i].id} 创建浏览器会话...`)
-                const session = await this.chromeController.createSession(processedAccounts[i])
-                session.chromeController = this.chromeController
+                const session = await this.chromeController.createSession(processedAccounts[i], platforms[i])
                 sessions.push(session)
-
-                console.log(`✅ 账号 ${processedAccounts[i].id} 会话创建成功，端口: ${session.debugPort}`)
             }
 
-            // 渲染模板（为第一个账号生成内容，其他账号会在发布时生成变化）
             const renderData = await this.templateEngine.render(template, processedContent, processedAccounts[0])
 
-            // 使用多平台发布引擎执行
             const result = await this.multiPlatformEngine.publishToMultiplePlatforms(
                 platforms,
                 sessions,
@@ -175,84 +147,185 @@ export class UniversalPublisher {
                 content.videoFile || content.file
             )
 
-            // 清理会话
             for (const session of sessions) {
                 await this.chromeController.closeSession(session.id)
             }
 
-            console.log('📊 多平台发布完成')
             return result
 
         } catch (error) {
-            console.error('❌ 多平台发布失败:', error.message)
+            console.error('❌ 串行多平台发布失败:', error.message)
+            throw error
+        }
+    }
+
+    // 🔧 保留：单平台发布
+    async publish(platformId, workflowType, content, template, account) {
+        console.log(`📱 开始发布 ${workflowType} 到 ${platformId} 平台: ${account.id}`)
+
+        try {
+            this.validateInput(platformId, workflowType, content, template)
+            const processedAccount = this.processAccountConfig(account)
+            const processedContent = await this.contentProcessor.process(content, workflowType)
+            const renderData = await this.templateEngine.render(template, processedContent, processedAccount)
+
+            const session = await this.chromeController.createSession(processedAccount, platformId)
+
+            const result = await this.multiPlatformEngine.publishToPlatform(
+                platformId,
+                session,
+                renderData,
+                content.videoFile || content.file
+            )
+
+            await this.saveResult(platformId, workflowType, result, processedAccount)
+            await this.chromeController.closeSession(session.id)
+
+            console.log(`✅ ${platformId} ${workflowType} 发布完成`)
+            return result
+
+        } catch (error) {
+            console.error(`❌ ${platformId} ${workflowType} 发布失败:`, error.message)
             await this.diagnoseError(error)
             throw error
         }
     }
 
-    /**
-     * 批量发布 (兼容原有接口)
-     */
-    async batchPublish(workflowType, content, template, accounts) {
-        console.log(`📦 批量发布 ${workflowType} 到 ${accounts.length} 个账号`)
+    // 🔧 新增：分组逻辑
+    splitIntoConcurrentGroups(platforms, accounts, maxConcurrent) {
+        const groups = []
 
-        const results = []
-        for (const account of accounts) {
-            try {
-                console.log(`\n📱 发布到账号: ${account.name || account.id}`)
-
-                // 获取账号对应的平台，默认为微信视频号
-                const platformId = account.platform || 'wechat'
-
-                // 为每个账号生成变化的内容
-                const variedContent = await this.contentProcessor.generateVariation(content, account)
-                const result = await this.publish(platformId, workflowType, variedContent, template, account)
-
-                results.push({
-                    account: account.id,
-                    platform: platformId,
-                    status: 'success',
-                    result
-                })
-
-                // 账号间延迟
-                if (accounts.indexOf(account) < accounts.length - 1) {
-                    const delay = 5000 + Math.random() * 5000
-                    console.log(`⏳ 等待 ${Math.round(delay / 1000)} 秒后处理下一个账号...`)
-                    await this.delay(delay)
-                }
-
-            } catch (error) {
-                console.error(`❌ 账号 ${account.id} 发布失败:`, error.message)
-                results.push({
-                    account: account.id,
-                    platform: account.platform || 'wechat',
-                    status: 'failed',
-                    error: error.message
-                })
-            }
+        for (let i = 0; i < platforms.length; i += maxConcurrent) {
+            const endIndex = Math.min(i + maxConcurrent, platforms.length)
+            groups.push({
+                platforms: platforms.slice(i, endIndex),
+                accounts: accounts.slice(i, endIndex)
+            })
         }
 
-        return results
+        return groups
     }
 
-    /**
-     * 获取支持的平台列表
-     */
+    // 🔧 新增：结果汇总
+    aggregateGroupResults(groupResults, originalPlatforms, originalAccounts) {
+        const allResults = []
+        const allErrors = []
+        let totalSuccessCount = 0
+        let totalAttemptedCount = 0
+        let totalSessionErrors = []
+
+        // 收集时间统计
+        const timingStats = {
+            groupTimings: [],
+            totalStartTime: Math.min(...groupResults.map(g => g.timing?.startTime || Date.now())),
+            totalEndTime: Math.max(...groupResults.map(g => g.timing?.endTime || Date.now()))
+        }
+
+        groupResults.forEach(groupResult => {
+            if (groupResult.results) {
+                allResults.push(...groupResult.results)
+                totalSuccessCount += groupResult.successCount || 0
+                totalAttemptedCount += groupResult.attemptedPlatforms || 0
+
+                if (groupResult.sessionErrors) {
+                    totalSessionErrors.push(...groupResult.sessionErrors)
+                }
+
+                if (groupResult.timing) {
+                    timingStats.groupTimings.push({
+                        groupIndex: groupResult.groupIndex,
+                        duration: groupResult.timing.totalTime,
+                        platforms: groupResult.attemptedPlatforms || 0
+                    })
+                }
+            }
+
+            if (groupResult.error) {
+                allErrors.push({
+                    groupIndex: groupResult.groupIndex,
+                    error: groupResult.error,
+                    platforms: groupResult.platforms || [],
+                    accounts: groupResult.accounts || []
+                })
+            }
+        })
+
+        // 计算总体统计
+        timingStats.totalDuration = timingStats.totalEndTime - timingStats.totalStartTime
+        timingStats.averageGroupDuration = timingStats.groupTimings.length > 0
+            ? timingStats.groupTimings.reduce((sum, g) => sum + g.duration, 0) / timingStats.groupTimings.length
+            : 0
+
+        return {
+            success: totalSuccessCount > 0,
+            totalPlatforms: originalPlatforms.length,
+            attemptedPlatforms: totalAttemptedCount,
+            totalSuccessCount: totalSuccessCount,
+            totalFailureCount: totalAttemptedCount - totalSuccessCount,
+            sessionErrorCount: totalSessionErrors.length,
+            results: allResults,
+            sessionErrors: totalSessionErrors,
+            groupErrors: allErrors,
+            timing: timingStats,
+            summary: this.generateConcurrentSummary(allResults, totalSessionErrors, allErrors),
+            platforms: originalPlatforms,
+            accounts: originalAccounts.map(a => ({ id: a.id, name: a.name }))
+        }
+    }
+
+    // 🔧 新增：并发结果摘要
+    generateConcurrentSummary(results, sessionErrors, groupErrors) {
+        const platformStats = {}
+        const errorsByType = {}
+
+        results.forEach(result => {
+            const platformName = result.platformName || result.platform
+            if (!platformStats[platformName]) {
+                platformStats[platformName] = { success: 0, failure: 0 }
+            }
+
+            if (result.success) {
+                platformStats[platformName].success++
+            } else {
+                platformStats[platformName].failure++
+                const errorType = result.errorType || 'unknown'
+                errorsByType[errorType] = (errorsByType[errorType] || 0) + 1
+            }
+        })
+
+        // 添加会话错误统计
+        sessionErrors.forEach(error => {
+            errorsByType['session'] = (errorsByType['session'] || 0) + 1
+        })
+
+        // 添加组错误统计
+        groupErrors.forEach(error => {
+            errorsByType['system'] = (errorsByType['system'] || 0) + 1
+        })
+
+        const recommendations = []
+        if (errorsByType.connection > 0) recommendations.push('检查网络连接稳定性')
+        if (errorsByType.session > 0) recommendations.push('确保浏览器实例正常运行')
+        if (errorsByType.element > 0) recommendations.push('更新平台页面选择器配置')
+        if (errorsByType.system > 0) recommendations.push('检查系统资源和并发限制')
+
+        return {
+            platformStats,
+            errorsByType,
+            recommendations,
+            concurrencyEffective: Object.values(platformStats).some(stat => stat.success > 0)
+        }
+    }
+
+    // 🔧 保留：原有方法
     getSupportedPlatforms() {
         return this.multiPlatformEngine.getSupportedPlatforms()
     }
 
-    /**
-     * 获取平台配置
-     */
     getPlatformConfig(platformId) {
         return getPlatformConfig(platformId)
     }
 
-    /**
-     * 预览内容适配效果
-     */
     async previewContent(platforms, content) {
         const previews = []
 
@@ -280,54 +353,41 @@ export class UniversalPublisher {
         return previews
     }
 
-    // ==================== 私有方法 ====================
-
+    // 私有方法
     validateInput(platformId, workflowType, content, template) {
-        // 验证平台
         const config = this.getPlatformConfig(platformId)
         if (!config) {
             throw new Error(`不支持的平台: ${platformId}`)
         }
 
-        // 验证工作流类型
         const supportedTypes = ['video', 'article', 'music', 'audio']
         if (!supportedTypes.includes(workflowType)) {
             throw new Error(`不支持的工作流类型: ${workflowType}`)
         }
 
-        // 验证内容
         if (!content || typeof content !== 'object') {
             throw new Error('内容参数无效')
         }
 
-        // 验证模板
         if (!template || typeof template !== 'object') {
             throw new Error('模板参数无效')
         }
     }
 
-    /**
-     * 🔧 新增：处理账号配置，移除硬编码端口
-     */
     processAccountConfig(account) {
         const processedAccount = { ...account }
 
-        // 移除硬编码的调试端口，让系统动态获取
         if (processedAccount.debugPort) {
             console.log(`⚠️ 移除账号 ${account.id} 中的硬编码端口: ${processedAccount.debugPort}`)
             delete processedAccount.debugPort
         }
 
-        // 确保必要的字段存在
         processedAccount.id = processedAccount.id || `account_${Date.now()}`
         processedAccount.platform = processedAccount.platform || 'wechat'
 
         return processedAccount
     }
 
-    /**
-     * 🔧 新增：错误诊断
-     */
     async diagnoseError(error) {
         console.log('\n🔍 错误诊断:')
 
@@ -338,7 +398,6 @@ export class UniversalPublisher {
             console.log('   2. 在管理器中启动至少一个浏览器实例')
             console.log('   3. 检查防火墙是否阻止端口访问')
 
-            // 获取详细的调试信息
             try {
                 const debugInfo = await this.chromeController.getDebugInfo()
                 console.log('📊 系统状态:', debugInfo)
@@ -373,13 +432,60 @@ export class UniversalPublisher {
             account: account.id,
             timestamp: new Date().toISOString(),
             result,
-            // 🔧 新增：保存使用的端口信息
             debugPort: result.debugPort || 'dynamic',
-            version: '2.0.0-fixed'
+            version: '2.0.0-concurrent'
         }
 
         fs.writeFileSync(filepath, JSON.stringify(saveData, null, 2))
         console.log(`📄 结果已保存: ${filepath}`)
+    }
+
+    // 🔧 新增：保存多平台结果
+    async saveMultiPlatformResult(result, workflowType) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const filename = `multi-platform-${workflowType}-${timestamp}.json`
+        const filepath = path.join(this.config.outputDir, filename)
+
+        const saveData = {
+            type: 'multi-platform',
+            workflowType,
+            timestamp: new Date().toISOString(),
+            result,
+            version: '2.0.0-concurrent',
+            concurrencyEnabled: this.config.enableConcurrency,
+            maxConcurrentPlatforms: this.config.maxConcurrentPlatforms
+        }
+
+        fs.writeFileSync(filepath, JSON.stringify(saveData, null, 2))
+        console.log(`📄 多平台结果已保存: ${filepath}`)
+    }
+
+    initOutputDir() {
+        if (!fs.existsSync(this.config.outputDir)) {
+            fs.mkdirSync(this.config.outputDir, { recursive: true })
+        }
+    }
+
+    async logDebugInfo() {
+        try {
+            const debugInfo = await this.chromeController.getDebugInfo()
+            console.log('🔍 系统状态:')
+            console.log(`   Electron API: ${debugInfo.apiAvailable ? '✅ 可用' : '❌ 不可用'}`)
+            console.log(`   API地址: ${debugInfo.apiEndpoint}`)
+            console.log(`   浏览器实例: ${debugInfo.browsersCount || 0} 个`)
+            console.log(`   运行中: ${debugInfo.runningBrowsers || 0} 个`)
+            console.log(`   并发模式: ${this.config.enableConcurrency ? '✅ 启用' : '❌ 禁用'}`)
+            console.log(`   最大并发: ${this.config.maxConcurrentPlatforms} 个平台`)
+
+            if (debugInfo.availablePorts && debugInfo.availablePorts.length > 0) {
+                console.log('   可用端口:')
+                debugInfo.availablePorts.forEach(port => {
+                    console.log(`     - ${port.accountId}: ${port.port} (${port.status})`)
+                })
+            }
+        } catch (error) {
+            console.log('⚠️ 获取调试信息失败:', error.message)
+        }
     }
 
     delay(ms) {

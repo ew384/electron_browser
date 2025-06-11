@@ -1,8 +1,6 @@
-// automation/core/chrome-controller.js - 修复版本
-// 集成 ElectronBrowserAPI 实现动态端口获取
-
-import { getPlatformConfig } from '../config/platforms.js'
+// automation/core/chrome-controller.js - 简化版本（业务层协调器）
 import { ElectronBrowserAPI } from './electron-browser-api.js'
+
 export class ChromeController {
     constructor(config = {}) {
         this.config = {
@@ -11,6 +9,8 @@ export class ChromeController {
             retryAttempts: config.retryAttempts || 3,
             ...config
         }
+
+        // 🔧 简化：只保留会话管理，移除WebSocket操作
         this.sessions = new Map()
         this.electronAPI = new ElectronBrowserAPI({
             baseUrl: this.config.electronApiUrl,
@@ -19,40 +19,49 @@ export class ChromeController {
         })
     }
 
-    async createSession(account) {
-        console.log(`🔗 创建浏览器会话: ${account.id}`)
+    // 🔧 修改：创建标签页级会话
+    async createSession(account, platformId) {
+        console.log(`🔗 创建浏览器会话: ${account.id} - ${platformId}`)
 
         try {
-            // 🔧 修改：不再直接连接WebSocket，而是验证API可用性
-            const debugInfo = await this.electronAPI.getDebugInfo()
-
-            if (!debugInfo.apiAvailable) {
-                throw new Error('Electron Browser Manager API 不可用')
-            }
-
-            // 获取账号对应的浏览器实例
+            // 获取浏览器实例
             const browserInstance = await this.electronAPI.getBrowserInstanceByAccount(account.id)
-
             if (!browserInstance || browserInstance.status !== 'running') {
                 throw new Error(`账号 ${account.id} 的浏览器实例未运行`)
             }
 
-            // 创建会话对象（不包含WebSocket连接）
+            // 🔧 新增：为该平台创建专用标签页
+            const platformConfig = await this.getPlatformConfig(platformId)
+            const uploadUrl = platformConfig?.urls?.upload
+
+            const tabResponse = await this.httpRequest(`${this.config.electronApiUrl}/api/browser/${account.id}/tabs`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    url: uploadUrl,
+                    platform: platformId
+                })
+            })
+
+            if (!tabResponse.success) {
+                throw new Error(`创建标签页失败: ${tabResponse.error}`)
+            }
+
+            // 创建会话对象
+            const sessionId = `${account.id}-${platformId}-${tabResponse.tabId}`
             const session = {
-                id: account.id,
-                platform: account.platform || 'wechat',
+                id: sessionId,
+                accountId: account.id,
+                tabId: tabResponse.tabId,
+                platform: platformId,
                 account: account,
                 browserInstance: browserInstance,
                 debugPort: browserInstance.debugPort,
-                chromeController: this
+                sessionKey: tabResponse.sessionKey,
+                createdAt: Date.now()
             }
 
-            this.sessions.set(account.id, session)
-
-            // 🔧 修改：通过API导航到上传页面
-            await this.navigateToUploadPage(session)
-
-            console.log(`✅ 会话创建成功: ${account.id} - 端口: ${browserInstance.debugPort}`)
+            this.sessions.set(sessionId, session)
+            console.log(`✅ 会话创建成功: ${sessionId}`)
             return session
 
         } catch (error) {
@@ -61,36 +70,28 @@ export class ChromeController {
         }
     }
 
-    /**
-     * 🔧 修改：通过HTTP API执行脚本
-     */
+    // 🔧 简化：通过HTTP API执行脚本
     async executeScript(session, script) {
-        console.log('📜 执行页面脚本（通过API）...')
+        console.log(`📜 执行页面脚本: ${session.platform}`)
 
         try {
-            const response = await fetch(`${this.config.electronApiUrl}/api/browser/${session.id}/execute-script`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    script: script,
-                    returnByValue: true,
-                    awaitPromise: true
-                })
-            })
+            const response = await this.httpRequest(
+                `${this.config.electronApiUrl}/api/browser/${session.accountId}/tabs/${session.tabId}/execute-script`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        script: script,
+                        returnByValue: true,
+                        awaitPromise: true
+                    })
+                }
+            )
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+            if (!response.success) {
+                throw new Error(response.error)
             }
 
-            const result = await response.json()
-
-            if (!result.success) {
-                throw new Error(result.error)
-            }
-
-            return result
+            return response
 
         } catch (error) {
             console.error(`❌ 脚本执行失败: ${error.message}`)
@@ -98,39 +99,31 @@ export class ChromeController {
         }
     }
 
-    /**
-     * 🔧 修改：通过HTTP API上传文件
-     */
+    // 🔧 简化：通过HTTP API上传文件
     async uploadFile(session, filePath, base64Data, fileName, mimeType) {
-        console.log('📤 上传文件（通过API）...')
+        console.log(`📤 上传文件: ${session.platform}`)
 
         try {
-            const response = await fetch(`${this.config.electronApiUrl}/api/browser/${session.id}/upload-file`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    filePath: filePath,
-                    base64Data: base64Data,
-                    fileName: fileName,
-                    mimeType: mimeType,
-                    selector: 'input[type="file"]'
-                })
-            })
+            const response = await this.httpRequest(
+                `${this.config.electronApiUrl}/api/browser/${session.accountId}/tabs/${session.tabId}/upload-file`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        filePath: filePath,
+                        base64Data: base64Data,
+                        fileName: fileName,
+                        mimeType: mimeType,
+                        selector: 'input[type="file"]'
+                    })
+                }
+            )
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+            if (!response.success) {
+                throw new Error(response.error)
             }
 
-            const result = await response.json()
-
-            if (!result.success) {
-                throw new Error(result.error)
-            }
-
-            console.log(`✅ 文件上传成功: ${result.fileName}`)
-            return result
+            console.log(`✅ 文件上传成功: ${response.fileName}`)
+            return response
 
         } catch (error) {
             console.error(`❌ 文件上传失败: ${error.message}`)
@@ -138,11 +131,9 @@ export class ChromeController {
         }
     }
 
-    /**
-     * 🔧 修改：通过HTTP API导航页面
-     */
+    // 🔧 简化：通过HTTP API导航页面
     async navigateToUploadPage(session) {
-        const platformConfig = getPlatformConfig(session.platform)
+        const platformConfig = await this.getPlatformConfig(session.platform)
         if (!platformConfig) {
             throw new Error(`不支持的平台: ${session.platform}`)
         }
@@ -152,29 +143,19 @@ export class ChromeController {
         try {
             console.log(`🔄 导航到${platformConfig.name}上传页面: ${uploadUrl}`)
 
-            const response = await fetch(`${this.config.electronApiUrl}/api/browser/${session.id}/navigate`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    url: uploadUrl
-                })
-            })
+            const response = await this.httpRequest(
+                `${this.config.electronApiUrl}/api/browser/${session.accountId}/tabs/${session.tabId}/navigate`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({ url: uploadUrl })
+                }
+            )
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+            if (!response.success) {
+                throw new Error(response.error)
             }
 
-            const result = await response.json()
-
-            if (!result.success) {
-                throw new Error(result.error)
-            }
-
-            // 等待页面加载
-            await this.delay(3000)
-
+            await this.delay(3000) // 等待页面加载
             console.log(`✅ 已导航到${platformConfig.name}上传页面`)
             return true
 
@@ -184,54 +165,75 @@ export class ChromeController {
         }
     }
 
-    /**
-     * 🔧 修改：通过HTTP API等待条件
-     */
-    async waitForCondition(session, condition, timeout = 30000) {
-        console.log('⏳ 等待条件满足...')
+    // 🔧 新增：并发创建多个会话
+    async createMultipleSessions(accounts, platforms) {
+        console.log(`🔗 并发创建多个会话: ${accounts.length} 账号, ${platforms.length} 平台`)
 
-        try {
-            const response = await fetch(`${this.config.electronApiUrl}/api/browser/${session.id}/wait-for`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    condition: condition,
-                    timeout: timeout,
-                    interval: 1000
+        const sessionPromises = []
+
+        for (let i = 0; i < platforms.length; i++) {
+            const account = accounts[i]
+            const platform = platforms[i]
+
+            sessionPromises.push(
+                this.createSession(account, platform).catch(error => {
+                    console.error(`会话创建失败 ${account.id}-${platform}:`, error.message)
+                    return { error: error.message, account: account.id, platform }
                 })
-            })
+            )
+        }
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-            }
+        const results = await Promise.all(sessionPromises)
 
-            const result = await response.json()
+        const validSessions = results.filter(result => !result.error)
+        const errors = results.filter(result => result.error)
 
-            if (!result.success) {
-                throw new Error(result.error)
-            }
+        console.log(`✅ 成功创建 ${validSessions.length} 个会话, ${errors.length} 个失败`)
 
-            console.log('✅ 条件满足')
-            return result
-
-        } catch (error) {
-            console.error(`❌ 等待条件失败: ${error.message}`)
-            throw error
+        return {
+            sessions: validSessions,
+            errors: errors,
+            successCount: validSessions.length,
+            totalCount: results.length
         }
     }
 
-    // 🔧 保留原有的其他方法，但移除WebSocket相关代码
+    // 🔧 简化：关闭会话（清理标签页）
     async closeSession(sessionId) {
         const session = this.sessions.get(sessionId)
         if (session) {
-            // 不再需要关闭WebSocket连接
+            try {
+                // 关闭标签页
+                await this.httpRequest(
+                    `${this.config.electronApiUrl}/api/browser/${session.accountId}/tabs/${session.tabId}`,
+                    { method: 'DELETE' }
+                )
+                console.log(`🔌 标签页已关闭: ${session.tabId}`)
+            } catch (error) {
+                console.warn(`⚠️ 关闭标签页失败: ${error.message}`)
+            }
+
             this.sessions.delete(sessionId)
-            console.log(`🔌 会话已关闭: ${sessionId}`)
+            console.log(`🔌 会话已清理: ${sessionId}`)
         }
     }
 
+    // 🔧 新增：批量关闭会话
+    async closeMultipleSessions(sessionIds) {
+        console.log(`🔌 批量关闭会话: ${sessionIds.length} 个`)
+
+        const closePromises = sessionIds.map(sessionId =>
+            this.closeSession(sessionId).catch(error => {
+                console.warn(`关闭会话失败 ${sessionId}:`, error.message)
+                return { error: error.message, sessionId }
+            })
+        )
+
+        await Promise.all(closePromises)
+        console.log(`✅ 批量会话关闭完成`)
+    }
+
+    // 🔧 保留：工具方法
     getSession(sessionId) {
         return this.sessions.get(sessionId)
     }
@@ -242,9 +244,8 @@ export class ChromeController {
 
     async cleanup() {
         console.log('🧹 清理所有浏览器会话...')
-        for (const sessionId of this.sessions.keys()) {
-            await this.closeSession(sessionId)
-        }
+        const sessionIds = Array.from(this.sessions.keys())
+        await this.closeMultipleSessions(sessionIds)
         console.log('✅ 所有会话已清理')
     }
 
@@ -254,5 +255,42 @@ export class ChromeController {
 
     async getDebugInfo() {
         return await this.electronAPI.getDebugInfo()
+    }
+
+    // 🔧 新增：HTTP请求工具方法
+    async httpRequest(url, options = {}) {
+        const requestOptions = {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            ...options
+        }
+
+        try {
+            const response = await fetch(url, requestOptions)
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+            }
+
+            return await response.json()
+
+        } catch (error) {
+            console.error(`HTTP请求失败 ${url}:`, error.message)
+            throw error
+        }
+    }
+
+    // 🔧 保留：获取平台配置
+    async getPlatformConfig(platformId) {
+        try {
+            // 这里可以从配置文件或API获取平台配置
+            const { getPlatformConfig } = await import('../config/platforms.js')
+            return getPlatformConfig(platformId)
+        } catch (error) {
+            console.error('获取平台配置失败:', error.message)
+            return null
+        }
     }
 }

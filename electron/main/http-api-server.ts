@@ -1,10 +1,10 @@
-// electron/main/http-api-server.ts - 修复类型错误版本
+// electron/main/http-api-server.ts - 基于现有代码的增强版本
 import * as http from 'http';
 import * as url from 'url';
 import { WindowManager } from './window-manager';
 import { AccountStorage } from './storage/account-storage';
 
-// 定义浏览器信息接口
+// 保留原有的浏览器信息接口
 interface BrowserInfo {
     id: string;
     name: string;
@@ -26,6 +26,16 @@ export class HttpApiServer {
     private windowManager: WindowManager;
     private accountStorage: AccountStorage;
     private commandIdCounter: number = 1; // 🔧 新增：命令ID计数器
+
+    // 🔧 新增：标签页会话缓存
+    private tabSessions: Map<string, {
+        accountId: string;
+        tabId: string;
+        platform: string;
+        createdAt: number;
+        lastUsed: number;
+    }> = new Map();
+
     constructor(windowManager: WindowManager, accountStorage: AccountStorage) {
         this.windowManager = windowManager;
         this.accountStorage = accountStorage;
@@ -87,8 +97,39 @@ export class HttpApiServer {
             // 设置响应头
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Access-Control-Allow-Origin', '*');
-            // 路由处理
-            if (method === 'GET' && pathname === '/api/health') {
+
+            // 🔧 新增：标签页管理路由
+            if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs$/)) {
+                const accountId = pathname.split('/')[3];
+                await this.handleCreateTab(req, res, accountId);
+            } else if (method === 'GET' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs$/)) {
+                const accountId = pathname.split('/')[3];
+                await this.handleGetTabs(req, res, accountId);
+            } else if (method === 'DELETE' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+$/)) {
+                const pathParts = pathname.split('/');
+                const accountId = pathParts[3];
+                const tabId = pathParts[5];
+                await this.handleCloseTab(req, res, accountId, tabId);
+            }
+            // 🔧 新增：标签页级操作路由
+            else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+\/execute-script$/)) {
+                const pathParts = pathname.split('/');
+                const accountId = pathParts[3];
+                const tabId = pathParts[5];
+                await this.handleExecuteScriptInTab(req, res, accountId, tabId);
+            } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+\/navigate$/)) {
+                const pathParts = pathname.split('/');
+                const accountId = pathParts[3];
+                const tabId = pathParts[5];
+                await this.handleNavigateTab(req, res, accountId, tabId);
+            } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+\/upload-file$/)) {
+                const pathParts = pathname.split('/');
+                const accountId = pathParts[3];
+                const tabId = pathParts[5];
+                await this.handleUploadFileToTab(req, res, accountId, tabId);
+            }
+            // 保留原有路由...
+            else if (method === 'GET' && pathname === '/api/health') {
                 await this.handleHealthCheck(req, res);
             } else if (method === 'GET' && pathname === '/api/accounts') {
                 await this.handleGetAccounts(req, res);
@@ -98,8 +139,8 @@ export class HttpApiServer {
                 const pathParts = pathname.split('/');
                 const accountId = pathParts[3];
 
-                if (pathname.endsWith('/tabs')) {
-                    await this.handleGetBrowserTabs(req, res, accountId);
+                if (pathname.endsWith('/tabs') && !pathname.includes('/tabs/')) {
+                    // 已在上面处理
                 } else if (pathParts.length === 4) {
                     await this.handleGetBrowser(req, res, accountId);
                 } else {
@@ -108,19 +149,19 @@ export class HttpApiServer {
                     res.end(JSON.stringify({ success: false, error: 'Not Found' }));
                 }
             } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/execute-script$/)) {
-                // 🔧 新增：执行脚本
+                // 🔧 保留：原有的单标签页脚本执行（兼容性）
                 const accountId = pathname.split('/')[3];
                 await this.handleExecuteScript(req, res, accountId);
             } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/upload-file$/)) {
-                // 🔧 新增：上传文件
+                // 🔧 保留：原有的单标签页文件上传（兼容性）
                 const accountId = pathname.split('/')[3];
                 await this.handleUploadFile(req, res, accountId);
             } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/navigate$/)) {
-                // 🔧 新增：导航页面
+                // 🔧 保留：原有的单标签页导航（兼容性）
                 const accountId = pathname.split('/')[3];
                 await this.handleNavigate(req, res, accountId);
             } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/wait-for$/)) {
-                // 🔧 新增：等待元素
+                // 🔧 保留：原有的等待条件（兼容性）
                 const accountId = pathname.split('/')[3];
                 await this.handleWaitFor(req, res, accountId);
             } else if (method === 'POST' && pathname === '/api/browsers/refresh') {
@@ -150,7 +191,276 @@ export class HttpApiServer {
         }
     }
 
-    // 🔧 新增：执行脚本的处理器
+    // ==================== 🔧 新增：标签页管理方法 ====================
+
+    // 创建新标签页
+    private async handleCreateTab(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
+                return;
+            }
+
+            const body = await this.readRequestBody(req);
+            const { url, platform } = JSON.parse(body);
+
+            // 创建新标签页
+            const result = await this.sendCDPCommand(port, '', 'Target.createTarget', {
+                url: url || 'about:blank'
+            });
+
+            const tabId = result.targetId;
+
+            // 注册标签页会话
+            const sessionKey = `${accountId}-${tabId}`;
+            this.tabSessions.set(sessionKey, {
+                accountId,
+                tabId,
+                platform: platform || 'unknown',
+                createdAt: Date.now(),
+                lastUsed: Date.now()
+            });
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                tabId: tabId,
+                sessionKey: sessionKey,
+                url: url
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Create tab error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 获取标签页列表
+    private async handleGetTabs(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
+                return;
+            }
+
+            const tabs = await this.getChromeTabsInfo(port);
+
+            // 添加会话信息
+            const tabsWithSessions = tabs.map(tab => {
+                const sessionKey = `${accountId}-${tab.id}`;
+                const session = this.tabSessions.get(sessionKey);
+
+                return {
+                    ...tab,
+                    sessionKey: session ? sessionKey : null,
+                    platform: session?.platform || null,
+                    createdAt: session?.createdAt || null,
+                    lastUsed: session?.lastUsed || null
+                };
+            });
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                tabs: tabsWithSessions,
+                totalTabs: tabs.length,
+                managedTabs: Array.from(this.tabSessions.values()).filter(s => s.accountId === accountId).length
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Get tabs error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 关闭标签页
+    private async handleCloseTab(req: http.IncomingMessage, res: http.ServerResponse, accountId: string, tabId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
+                return;
+            }
+
+            // 关闭标签页
+            await this.sendCDPCommand(port, '', 'Target.closeTarget', { targetId: tabId });
+
+            // 清理会话
+            const sessionKey = `${accountId}-${tabId}`;
+            this.tabSessions.delete(sessionKey);
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                message: 'Tab closed successfully',
+                tabId: tabId
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Close tab error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 在指定标签页执行脚本
+    private async handleExecuteScriptInTab(req: http.IncomingMessage, res: http.ServerResponse, accountId: string, tabId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
+                return;
+            }
+
+            const body = await this.readRequestBody(req);
+            const { script, awaitPromise = false, returnByValue = true } = JSON.parse(body);
+
+            if (!script) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ success: false, error: 'Script is required' }));
+                return;
+            }
+
+            // 更新会话使用时间
+            const sessionKey = `${accountId}-${tabId}`;
+            const session = this.tabSessions.get(sessionKey);
+            if (session) {
+                session.lastUsed = Date.now();
+            }
+
+            const result = await this.executeScriptInTab(port, tabId, script, { awaitPromise, returnByValue });
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                result: result,
+                tabId: tabId,
+                sessionKey: sessionKey
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Execute script in tab error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 导航指定标签页
+    private async handleNavigateTab(req: http.IncomingMessage, res: http.ServerResponse, accountId: string, tabId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
+                return;
+            }
+
+            const body = await this.readRequestBody(req);
+            const { url } = JSON.parse(body);
+
+            if (!url) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ success: false, error: 'URL is required' }));
+                return;
+            }
+
+            await this.sendCDPCommand(port, tabId, 'Page.navigate', { url });
+
+            // 更新会话使用时间
+            const sessionKey = `${accountId}-${tabId}`;
+            const session = this.tabSessions.get(sessionKey);
+            if (session) {
+                session.lastUsed = Date.now();
+            }
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                message: 'Navigation started',
+                url: url,
+                tabId: tabId
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Navigate tab error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // 在指定标签页上传文件
+    private async handleUploadFileToTab(req: http.IncomingMessage, res: http.ServerResponse, accountId: string, tabId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
+                return;
+            }
+
+            const body = await this.readRequestBody(req);
+            const { fileName, mimeType, base64Data, selector = 'input[type="file"]' } = JSON.parse(body);
+
+            if (!base64Data) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ success: false, error: 'File data is required' }));
+                return;
+            }
+
+            const uploadScript = this.generateFileUploadScript(fileName, mimeType, base64Data, selector);
+            const result = await this.executeScriptInTab(port, tabId, uploadScript, { returnByValue: true });
+
+            // 更新会话使用时间
+            const sessionKey = `${accountId}-${tabId}`;
+            const session = this.tabSessions.get(sessionKey);
+            if (session) {
+                session.lastUsed = Date.now();
+            }
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                result: result,
+                tabId: tabId,
+                fileName: fileName
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Upload file to tab error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    // ==================== 保留原有方法 ====================
+
+    // 🔧 保留：原有的执行脚本方法（兼容性）
     private async handleExecuteScript(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
         try {
             const port = this.windowManager.getChromeDebugPort(accountId);
@@ -208,7 +518,7 @@ export class HttpApiServer {
         }
     }
 
-    // 🔧 新增：上传文件的处理器
+    // 🔧 保留：原有的上传文件方法（兼容性）
     private async handleUploadFile(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
         try {
             const port = this.windowManager.getChromeDebugPort(accountId);
@@ -268,7 +578,7 @@ export class HttpApiServer {
         }
     }
 
-    // 🔧 新增：导航页面的处理器
+    // 🔧 保留：原有的导航方法（兼容性）
     private async handleNavigate(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
         try {
             const port = this.windowManager.getChromeDebugPort(accountId);
@@ -324,7 +634,7 @@ export class HttpApiServer {
         }
     }
 
-    // 🔧 新增：等待条件的处理器
+    // 🔧 保留：原有的等待条件方法（兼容性）
     private async handleWaitFor(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
         try {
             const port = this.windowManager.getChromeDebugPort(accountId);
@@ -379,7 +689,290 @@ export class HttpApiServer {
         }
     }
 
-    // 🔧 新增：辅助方法 - 读取请求体
+    private async handleHealthCheck(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        res.writeHead(200);
+        res.end(JSON.stringify({
+            success: true,
+            service: 'Electron Browser Manager HTTP API',
+            timestamp: new Date().toISOString(),
+            port: this.port,
+            features: {
+                tabManagement: true,
+                concurrentOperations: true,
+                legacyCompatibility: true
+            }
+        }));
+    }
+
+    private async handleGetAccounts(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        try {
+            const accounts = await this.accountStorage.getAllAccounts();
+
+            // 同步实例状态和端口信息
+            for (const account of accounts) {
+                const instance = this.windowManager.getInstance(account.id);
+                if (instance) {
+                    (account as any).status = instance.status === 'running' ? 'running' : 'idle';
+                    const port = this.windowManager.getChromeDebugPort(account.id);
+                    (account as any).debugPort = port || undefined;
+                } else {
+                    (account as any).status = 'idle';
+                    (account as any).debugPort = undefined;
+                }
+            }
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                accounts,
+                timestamp: new Date().toISOString()
+            }));
+        } catch (error) {
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+                accounts: []
+            }));
+        }
+    }
+
+    private async handleGetBrowsers(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        try {
+            const accounts = await this.accountStorage.getAllAccounts();
+            const browsers: BrowserInfo[] = [];
+
+            for (const account of accounts) {
+                const instance = this.windowManager.getInstance(account.id);
+
+                const browserInfo: BrowserInfo = {
+                    id: account.id,
+                    name: account.name || `浏览器 ${account.id}`,
+                    accountId: account.id,
+                    group: (account as any).group || null, // 类型断言处理
+                    status: 'stopped',
+                    debugPort: null,
+                    url: null,
+                    tabsCount: 0,
+                    chromeVersion: null,
+                    lastActive: (account as any).lastActive || null, // 类型断言处理
+                    createdAt: account.createdAt || null,
+                    config: account.config || {}
+                };
+
+                // 获取实时状态
+                if (instance) {
+                    browserInfo.status = instance.status === 'running' ? 'running' : 'stopped';
+                    const port = this.windowManager.getChromeDebugPort(account.id);
+                    browserInfo.debugPort = port; // 修复：允许 number | null
+
+                    // 如果有端口，验证Chrome实例并获取标签页信息
+                    if (port) {
+                        try {
+                            const validation = await this.validateChromeInstance(port);
+                            if (validation.isRunning) {
+                                browserInfo.tabsCount = validation.tabs || 0;
+                                browserInfo.chromeVersion = validation.version?.Browser || null;
+                                browserInfo.url = validation.currentUrl || null; // 修复：将 undefined 转换为 null
+                            } else {
+                                browserInfo.status = 'stopped';
+                                browserInfo.debugPort = null;
+                            }
+                        } catch (validationError) {
+                            console.log(`[HttpApiServer] Chrome validation failed for port ${port}:`, validationError);
+                            browserInfo.status = 'stopped';
+                            browserInfo.debugPort = null;
+                        }
+                    }
+                }
+
+                browsers.push(browserInfo);
+            }
+
+            // 按状态排序：运行中的在前面
+            browsers.sort((a, b) => {
+                if (a.status === 'running' && b.status !== 'running') return -1;
+                if (a.status !== 'running' && b.status === 'running') return 1;
+                return 0;
+            });
+
+            const runningCount = browsers.filter(b => b.status === 'running').length;
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                browsers,
+                statistics: {
+                    total: browsers.length,
+                    running: runningCount,
+                    stopped: browsers.length - runningCount
+                },
+                timestamp: new Date().toISOString(),
+                source: 'electron-http-api'
+            }));
+        } catch (error) {
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+                browsers: []
+            }));
+        }
+    }
+
+    private async handleGetBrowser(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
+        try {
+            const account = await this.accountStorage.getAccount(accountId);
+            if (!account) {
+                res.writeHead(404);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Browser instance not found'
+                }));
+                return;
+            }
+
+            const instance = this.windowManager.getInstance(accountId);
+            const browserInfo = {
+                id: account.id,
+                name: account.name,
+                status: instance?.status || 'stopped',
+                debugPort: this.windowManager.getChromeDebugPort(accountId),
+                config: account.config || {},
+                fingerprint: account.config?.fingerprint || null
+            };
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                browser: browserInfo
+            }));
+        } catch (error) {
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    private async handleRefreshBrowsers(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        try {
+            // 刷新所有实例状态
+            const accounts = await this.accountStorage.getAllAccounts();
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                message: 'Browser instances refreshed',
+                count: accounts.length,
+                timestamp: new Date().toISOString()
+            }));
+        } catch (error) {
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+
+    private async handleDebugChromePorts(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        try {
+            console.log('[HttpApiServer] === Chrome端口调试信息 ===');
+
+            const accounts = await this.accountStorage.getAllAccounts();
+            const instances = this.windowManager.getAllInstances();
+
+            const debugInfo: any = {
+                accounts: accounts.map(acc => ({
+                    id: acc.id,
+                    name: acc.name,
+                    status: (acc as any).status
+                })),
+                instances: instances.map(inst => ({
+                    accountId: inst.accountId,
+                    windowId: inst.windowId,
+                    status: inst.status,
+                    debugPort: this.windowManager.getChromeDebugPort(inst.accountId)
+                })),
+                portValidation: []
+            };
+
+            // 验证每个端口
+            for (const instance of instances) {
+                const port = this.windowManager.getChromeDebugPort(instance.accountId);
+                if (port) {
+                    try {
+                        console.log(`[HttpApiServer] 详细检查端口 ${port} (账号: ${instance.accountId})`);
+
+                        // 获取版本信息
+                        const versionData = await this.httpRequest(`http://localhost:${port}/json/version`);
+                        const version = JSON.parse(versionData);
+
+                        // 获取详细标签页信息
+                        const tabsData = await this.httpRequest(`http://localhost:${port}/json`);
+                        const allTabs: any[] = JSON.parse(tabsData);
+
+                        // 分类标签页
+                        const pageTabs = allTabs.filter((tab: any) => tab.type === 'page' && !tab.url.startsWith('chrome://'));
+                        const wechatTabs = pageTabs.filter((tab: any) =>
+                            tab.url.includes('channels.weixin.qq.com') ||
+                            tab.url.includes('weixin.qq.com')
+                        );
+
+                        console.log(`[HttpApiServer] 端口 ${port} 详情:`);
+                        console.log(`  Chrome版本: ${version.Browser}`);
+                        console.log(`  所有标签页: ${allTabs.length}`);
+                        console.log(`  页面标签页: ${pageTabs.length}`);
+                        console.log(`  微信相关标签页: ${wechatTabs.length}`);
+
+                        pageTabs.forEach((tab: any, index: number) => {
+                            console.log(`  ${index + 1}. ${tab.title}`);
+                            console.log(`     ${tab.url}`);
+                        });
+
+                        debugInfo.portValidation.push({
+                            accountId: instance.accountId,
+                            port: port,
+                            isValid: true,
+                            chromeVersion: version.Browser,
+                            totalTabs: allTabs.length,
+                            pageTabs: pageTabs.length,
+                            wechatTabs: wechatTabs.length,
+                            tabs: pageTabs.map((tab: any) => ({
+                                title: tab.title,
+                                url: tab.url,
+                                id: tab.id
+                            }))
+                        });
+
+                    } catch (error: any) {
+                        console.error(`[HttpApiServer] 端口 ${port} 验证失败:`, error?.message || String(error));
+                        debugInfo.portValidation.push({
+                            accountId: instance.accountId,
+                            port: port,
+                            isValid: false,
+                            error: error?.message || String(error)
+                        });
+                    }
+                }
+            }
+
+            res.writeHead(200);
+            res.end(JSON.stringify(debugInfo, null, 2));
+        } catch (error: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error?.message || String(error)
+            }));
+        }
+    }
+
+    // ==================== 核心辅助方法 ====================
+
+    // 🔧 辅助方法：读取请求体
     private readRequestBody(req: http.IncomingMessage): Promise<string> {
         return new Promise((resolve, reject) => {
             let body = '';
@@ -393,7 +986,7 @@ export class HttpApiServer {
         });
     }
 
-    // 🔧 新增：在指定标签页执行脚本
+    // 🔧 在指定标签页执行脚本
     private async executeScriptInTab(port: number, tabId: string, script: string, options: any = {}): Promise<any> {
         return new Promise((resolve, reject) => {
             const WebSocket = require('ws');
@@ -559,8 +1152,7 @@ export class HttpApiServer {
         });
     }
 
-
-    // 🔧 新增：等待条件满足
+    // 🔧 等待条件满足
     private async waitForCondition(port: number, tabId: string, condition: string, timeout: number, interval: number): Promise<any> {
         const startTime = Date.now();
 
@@ -580,7 +1172,7 @@ export class HttpApiServer {
         throw new Error('Wait condition timeout');
     }
 
-    // 🔧 新增：生成文件上传脚本
+    // 🔧 生成文件上传脚本
     private generateFileUploadScript(fileName: string, mimeType: string, base64Data: string, selector: string): string {
         return `
         (function() {
@@ -653,225 +1245,6 @@ export class HttpApiServer {
     `;
     }
 
-    private async handleHealthCheck(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        res.writeHead(200);
-        res.end(JSON.stringify({
-            success: true,
-            service: 'Electron Browser Manager HTTP API',
-            timestamp: new Date().toISOString(),
-            port: this.port
-        }));
-    }
-
-    private async handleGetAccounts(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        try {
-            const accounts = await this.accountStorage.getAllAccounts();
-
-            // 同步实例状态和端口信息
-            for (const account of accounts) {
-                const instance = this.windowManager.getInstance(account.id);
-                if (instance) {
-                    (account as any).status = instance.status === 'running' ? 'running' : 'idle';
-                    const port = this.windowManager.getChromeDebugPort(account.id);
-                    (account as any).debugPort = port || undefined;
-                } else {
-                    (account as any).status = 'idle';
-                    (account as any).debugPort = undefined;
-                }
-            }
-
-            res.writeHead(200);
-            res.end(JSON.stringify({
-                success: true,
-                accounts,
-                timestamp: new Date().toISOString()
-            }));
-        } catch (error) {
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-                accounts: []
-            }));
-        }
-    }
-
-    private async handleGetBrowsers(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        try {
-            const accounts = await this.accountStorage.getAllAccounts();
-            const browsers: BrowserInfo[] = [];
-
-            for (const account of accounts) {
-                const instance = this.windowManager.getInstance(account.id);
-
-                const browserInfo: BrowserInfo = {
-                    id: account.id,
-                    name: account.name || `浏览器 ${account.id}`,
-                    accountId: account.id,
-                    group: (account as any).group || null, // 类型断言处理
-                    status: 'stopped',
-                    debugPort: null,
-                    url: null,
-                    tabsCount: 0,
-                    chromeVersion: null,
-                    lastActive: (account as any).lastActive || null, // 类型断言处理
-                    createdAt: account.createdAt || null,
-                    config: account.config || {}
-                };
-
-                // 获取实时状态
-                if (instance) {
-                    browserInfo.status = instance.status === 'running' ? 'running' : 'stopped';
-                    const port = this.windowManager.getChromeDebugPort(account.id);
-                    browserInfo.debugPort = port; // 修复：允许 number | null
-
-                    // 如果有端口，验证Chrome实例并获取标签页信息
-                    if (port) {
-                        try {
-                            const validation = await this.validateChromeInstance(port);
-                            if (validation.isRunning) {
-                                browserInfo.tabsCount = validation.tabs || 0;
-                                browserInfo.chromeVersion = validation.version?.Browser || null;
-                                browserInfo.url = validation.currentUrl || null; // 修复：将 undefined 转换为 null
-                            } else {
-                                browserInfo.status = 'stopped';
-                                browserInfo.debugPort = null;
-                            }
-                        } catch (validationError) {
-                            console.log(`[HttpApiServer] Chrome validation failed for port ${port}:`, validationError);
-                            browserInfo.status = 'stopped';
-                            browserInfo.debugPort = null;
-                        }
-                    }
-                }
-
-                browsers.push(browserInfo);
-            }
-
-            // 按状态排序：运行中的在前面
-            browsers.sort((a, b) => {
-                if (a.status === 'running' && b.status !== 'running') return -1;
-                if (a.status !== 'running' && b.status === 'running') return 1;
-                return 0;
-            });
-
-            const runningCount = browsers.filter(b => b.status === 'running').length;
-
-            res.writeHead(200);
-            res.end(JSON.stringify({
-                success: true,
-                browsers,
-                statistics: {
-                    total: browsers.length,
-                    running: runningCount,
-                    stopped: browsers.length - runningCount
-                },
-                timestamp: new Date().toISOString(),
-                source: 'electron-http-api'
-            }));
-        } catch (error) {
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-                browsers: []
-            }));
-        }
-    }
-
-    private async handleGetBrowser(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
-        try {
-            const account = await this.accountStorage.getAccount(accountId);
-            if (!account) {
-                res.writeHead(404);
-                res.end(JSON.stringify({
-                    success: false,
-                    error: 'Browser instance not found'
-                }));
-                return;
-            }
-
-            const instance = this.windowManager.getInstance(accountId);
-            const browserInfo = {
-                id: account.id,
-                name: account.name,
-                status: instance?.status || 'stopped',
-                debugPort: this.windowManager.getChromeDebugPort(accountId),
-                config: account.config || {},
-                fingerprint: account.config?.fingerprint || null
-            };
-
-            res.writeHead(200);
-            res.end(JSON.stringify({
-                success: true,
-                browser: browserInfo
-            }));
-        } catch (error) {
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            }));
-        }
-    }
-
-    private async handleGetBrowserTabs(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
-        try {
-            const port = this.windowManager.getChromeDebugPort(accountId);
-            if (!port) {
-                res.writeHead(404);
-                res.end(JSON.stringify({
-                    success: false,
-                    error: 'Browser instance not running or port not found'
-                }));
-                return;
-            }
-
-            const tabs = await this.getChromeTabsInfo(port);
-
-            res.writeHead(200);
-            res.end(JSON.stringify({
-                success: true,
-                browserId: accountId,
-                debugPort: port,
-                tabs: tabs.map(tab => ({
-                    id: tab.id,
-                    title: tab.title,
-                    url: tab.url,
-                    type: tab.type,
-                    webSocketDebuggerUrl: tab.webSocketDebuggerUrl
-                }))
-            }));
-        } catch (error) {
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            }));
-        }
-    }
-
-    private async handleRefreshBrowsers(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        try {
-            // 刷新所有实例状态
-            const accounts = await this.accountStorage.getAllAccounts();
-
-            res.writeHead(200);
-            res.end(JSON.stringify({
-                success: true,
-                message: 'Browser instances refreshed',
-                count: accounts.length,
-                timestamp: new Date().toISOString()
-            }));
-        } catch (error) {
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            }));
-        }
-    }
-
     // 辅助方法：验证Chrome实例
     private async validateChromeInstance(port: number): Promise<{
         isRunning: boolean;
@@ -935,99 +1308,6 @@ export class HttpApiServer {
         } catch (error) {
             console.error('[HttpApiServer] Failed to get tabs info:', error);
             return [];
-        }
-    }
-
-    private async handleDebugChromePorts(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        try {
-            console.log('[HttpApiServer] === Chrome端口调试信息 ===');
-
-            const accounts = await this.accountStorage.getAllAccounts();
-            const instances = this.windowManager.getAllInstances();
-
-            const debugInfo: any = {
-                accounts: accounts.map(acc => ({
-                    id: acc.id,
-                    name: acc.name,
-                    status: (acc as any).status
-                })),
-                instances: instances.map(inst => ({
-                    accountId: inst.accountId,
-                    windowId: inst.windowId,
-                    status: inst.status,
-                    debugPort: this.windowManager.getChromeDebugPort(inst.accountId)
-                })),
-                portValidation: []
-            };
-
-            // 验证每个端口
-            for (const instance of instances) {
-                const port = this.windowManager.getChromeDebugPort(instance.accountId);
-                if (port) {
-                    try {
-                        console.log(`[HttpApiServer] 详细检查端口 ${port} (账号: ${instance.accountId})`);
-
-                        // 获取版本信息
-                        const versionData = await this.httpRequest(`http://localhost:${port}/json/version`);
-                        const version = JSON.parse(versionData);
-
-                        // 获取详细标签页信息
-                        const tabsData = await this.httpRequest(`http://localhost:${port}/json`);
-                        const allTabs: any[] = JSON.parse(tabsData);
-
-                        // 分类标签页
-                        const pageTabs = allTabs.filter((tab: any) => tab.type === 'page' && !tab.url.startsWith('chrome://'));
-                        const wechatTabs = pageTabs.filter((tab: any) =>
-                            tab.url.includes('channels.weixin.qq.com') ||
-                            tab.url.includes('weixin.qq.com')
-                        );
-
-                        console.log(`[HttpApiServer] 端口 ${port} 详情:`);
-                        console.log(`  Chrome版本: ${version.Browser}`);
-                        console.log(`  所有标签页: ${allTabs.length}`);
-                        console.log(`  页面标签页: ${pageTabs.length}`);
-                        console.log(`  微信相关标签页: ${wechatTabs.length}`);
-
-                        pageTabs.forEach((tab: any, index: number) => {
-                            console.log(`  ${index + 1}. ${tab.title}`);
-                            console.log(`     ${tab.url}`);
-                        });
-
-                        debugInfo.portValidation.push({
-                            accountId: instance.accountId,
-                            port: port,
-                            isValid: true,
-                            chromeVersion: version.Browser,
-                            totalTabs: allTabs.length,
-                            pageTabs: pageTabs.length,
-                            wechatTabs: wechatTabs.length,
-                            tabs: pageTabs.map((tab: any) => ({
-                                title: tab.title,
-                                url: tab.url,
-                                id: tab.id
-                            }))
-                        });
-
-                    } catch (error: any) {
-                        console.error(`[HttpApiServer] 端口 ${port} 验证失败:`, error?.message || String(error));
-                        debugInfo.portValidation.push({
-                            accountId: instance.accountId,
-                            port: port,
-                            isValid: false,
-                            error: error?.message || String(error)
-                        });
-                    }
-                }
-            }
-
-            res.writeHead(200);
-            res.end(JSON.stringify(debugInfo, null, 2));
-        } catch (error: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error?.message || String(error)
-            }));
         }
     }
 
