@@ -15,6 +15,7 @@
 │   ├── core
 │   │   ├── chrome-controller.js
 │   │   ├── content-processor.js
+│   │   ├── electron-browser-api.js
 │   │   ├── file-uploader.js
 │   │   ├── index.js
 │   │   ├── template-engine.js
@@ -29,6 +30,11 @@
 │   │   └── browser-integration.js
 │   ├── logs
 │   ├── output
+│   │   ├── douyin-video-wechat_test-2025-06-10T08-06-28-345Z.json
+│   │   ├── douyin-video-wechat_test-2025-06-10T09-02-15-089Z.json
+│   │   ├── wechat-video-account_1748421858240_7ua5pcz7x-2025-06-10T12-08-33-564Z.json
+│   │   ├── wechat-video-account_1748421858240_7ua5pcz7x-2025-06-10T12-08-56-521Z.json
+│   │   ├── wechat-video-account_1748421858240_7ua5pcz7x-2025-06-10T12-09-32-162Z.json
 │   │   ├── wechat-video-wechat_default-2025-06-10T06-10-02-123Z.json
 │   │   ├── wechat-video-wechat_default-2025-06-10T06-11-01-897Z.json
 │   │   ├── wechat-video-wechat_default-2025-06-10T06-12-27-059Z.json
@@ -39,19 +45,24 @@
 │   │   ├── wechat-video-wechat_default-2025-06-10T06-33-24-396Z.json
 │   │   ├── wechat-video-wechat_default-2025-06-10T06-38-32-860Z.json
 │   │   ├── wechat-video-wechat_default-2025-06-10T06-51-29-767Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T07-59-40-126Z.json
+│   │   ├── wechat-video-wechat_default-2025-06-10T08-00-34-010Z.json
 │   │   ├── wechat-video-wechat_test-2025-06-10T07-02-47-059Z.json
 │   │   ├── wechat-video-wechat_test-2025-06-10T07-03-09-025Z.json
 │   │   ├── wechat-video-wechat_test-2025-06-10T07-06-18-950Z.json
-│   │   └── wechat-video-wechat_test-2025-06-10T07-06-42-983Z.json
+│   │   ├── wechat-video-wechat_test-2025-06-10T07-06-42-983Z.json
+│   │   └── wechat-video-wechat_test-2025-06-10T07-58-57-505Z.json
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── README.md
 │   ├── test
-│   │   └── automation-test.js
+│   │   └── output
 │   ├── test-account.json
-│   ├── test_cli.sh
 │   ├── test-content.json
+│   ├── test-douyin.json
+│   ├── test_douyin.sh
 │   ├── test-template.json
+│   ├── test_wechat.sh
 │   ├── uploads
 │   ├── utils
 │   │   └── element-analyzer.js
@@ -75,6 +86,7 @@
 │   │   │   └── account-storage.ts
 │   │   └── window-manager.ts
 │   ├── package.json
+│   ├── package-lock.json
 │   ├── preload
 │   │   ├── fingerprint
 │   │   │   ├── canvas.ts
@@ -358,4 +370,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-113 directories, 245 files
+114 directories, 256 files
