@@ -90,7 +90,7 @@ export const PLATFORM_CONFIGS = {
             pageLoadTimeout: 15000,
             uploadTimeout: 60000,
             processingTimeout: 60000,
-            publishTimeout: 10000,
+            publishTimeout: 120000,
             retryDelay: 2000,
             maxRetries: 3
         }

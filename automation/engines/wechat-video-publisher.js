@@ -555,10 +555,12 @@ export class WeChatVideoPublisher {
     /**
      * 等待发布按钮激活
      */
+
     async waitForPublishButton() {
         console.log('⏳ 等待发表按钮激活和视频上传完成...')
 
-        const maxWaitTime = this.timing.publishTimeout || 60000
+        // 🔧 增加超时时间：从60秒增加到120秒（2分钟）
+        const maxWaitTime = this.timing.publishTimeout || 120000
         const checkInterval = 2000
         const startTime = Date.now()
 
@@ -567,11 +569,7 @@ export class WeChatVideoPublisher {
                 const status = await this.checkPublishReadiness()
 
                 if (status.ready) {
-                    console.log('✅ 发表按钮已激活且视频上传完成')
-                    console.log(`   删除按钮: ${status.videoReady ? '✅存在' : '❌缺失'}`)
-                    console.log(`   发表按钮: ${status.buttonReady ? '✅可用' : '❌禁用'}`)
-
-                    // 🔧 关键修复：立即返回，不再继续等待
+                    console.log('✅ 发表按钮已激活且视频处理完成')
                     return {
                         success: true,
                         waitTime: Date.now() - startTime
@@ -583,11 +581,9 @@ export class WeChatVideoPublisher {
                 console.log(`   按钮状态: ${status.buttonReady ? '✅激活' : '❌未激活'}`)
                 console.log(`   视频状态: ${status.videoReady ? '✅完成' : '⏳处理中'}`)
 
-                // 🔧 新增：如果删除按钮存在但发表按钮禁用，可能是临时状态，缩短等待间隔
+                // 如果视频完成但按钮未激活，说明在生成封面
                 if (status.videoReady && !status.buttonReady) {
-                    console.log('   💡 视频已完成，等待按钮激活...')
-                    await this.delay(1000) // 缩短等待时间到1秒
-                    continue
+                    console.log('   💡 视频已完成，正在生成封面，继续等待按钮激活...')
                 }
 
                 await this.delay(checkInterval)
@@ -598,11 +594,54 @@ export class WeChatVideoPublisher {
             }
         }
 
-        console.log('❌ 等待超时')
+        // 🔧 超时前最后检查：可能刚好在超时瞬间完成
+        console.log('⏰ 达到超时时间，进行最后检查...')
+        try {
+            const finalStatus = await this.checkPublishReadiness()
+            if (finalStatus.ready) {
+                console.log('🎉 最后检查发现按钮已激活，继续发布!')
+                return {
+                    success: true,
+                    waitTime: maxWaitTime,
+                    note: '超时前最后检查成功'
+                }
+            }
+
+            // 🔧 如果视频已完成但按钮未激活，再等30秒
+            if (finalStatus.videoReady && !finalStatus.buttonReady) {
+                console.log('📹 视频已完成但按钮未激活，延长等待30秒...')
+
+                const extendedWaitTime = 30000
+                const extendedStartTime = Date.now()
+
+                while (Date.now() - extendedStartTime < extendedWaitTime) {
+                    const extendedStatus = await this.checkPublishReadiness()
+
+                    if (extendedStatus.ready) {
+                        console.log('🎉 延长等待成功，按钮已激活!')
+                        return {
+                            success: true,
+                            waitTime: maxWaitTime + (Date.now() - extendedStartTime),
+                            note: '延长等待成功'
+                        }
+                    }
+
+                    const extendedWaitSeconds = Math.round((Date.now() - extendedStartTime) / 1000)
+                    console.log(`⏰ 延长等待中... (${extendedWaitSeconds}s/30s)`)
+
+                    await this.delay(2000)
+                }
+            }
+        } catch (error) {
+            console.log(`⚠️ 最后检查失败: ${error.message}`)
+        }
+
+        console.log('❌ 等待超时，封面生成时间过长')
         return {
             success: false,
-            error: '等待超时：发表按钮激活或视频上传未完成',
-            waitTime: maxWaitTime
+            error: '等待超时：封面生成时间超过预期，建议手动完成发布',
+            waitTime: maxWaitTime,
+            suggestion: '可以在微信页面手动点击发表按钮完成发布'
         }
     }
 
