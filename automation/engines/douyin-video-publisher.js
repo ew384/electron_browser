@@ -5,8 +5,9 @@ import fs from 'fs'
 import path from 'path'
 
 export class DouyinVideoPublisher {
-    constructor(session, platformConfig) {
+    constructor(session, platformConfig, chromeController) {
         this.session = session
+        this.chromeController = chromeController  // ✅ 正确接收并保存
         this.config = platformConfig
         this.selectors = platformConfig.selectors
         this.features = platformConfig.features
@@ -18,10 +19,6 @@ export class DouyinVideoPublisher {
 
         try {
             // ChromeController 已经自动导航到上传页面
-            if (this.features.needClickUpload) {
-                await this.clickUploadButton()
-            }
-
             const result = await this.uploadFileToDouyin(filePath)
 
             if (this.features.needVideoReview) {
@@ -35,17 +32,27 @@ export class DouyinVideoPublisher {
         }
     }
 
+    // 简化版的fillForm方法 - 无额外验证
+    // 在 douyin-video-publisher.js 中替换现有的 fillForm 方法
+
     async fillForm(content) {
         console.log('📝 填写抖音表单...')
 
         const steps = []
-        await this.delay(3000) // 等待页面加载
+
+        // 🔧 关键改进：增加等待时间，确保页面完全加载
+        console.log('⏳ 等待页面完全加载...')
+        await this.delay(5000) // 从3秒增加到5秒
 
         // 填写标题
         if (content.title && this.config.fields.title.required) {
             try {
                 console.log('📝 填写抖音标题...')
                 await this.fillFieldWithRetry('title', content.title)
+
+                // 🔧 简单延时，让填写操作完全完成
+                await this.delay(1500)
+
                 steps.push({ field: '标题', success: true, value: content.title })
                 console.log(`   ✅ 标题填写成功: ${content.title}`)
             } catch (error) {
@@ -59,6 +66,10 @@ export class DouyinVideoPublisher {
             try {
                 console.log('📝 填写抖音描述...')
                 await this.fillFieldWithRetry('description', content.description)
+
+                // 🔧 简单延时，让填写操作完全完成
+                await this.delay(1500)
+
                 steps.push({ field: '描述', success: true, value: content.description })
                 console.log(`   ✅ 描述填写成功`)
             } catch (error) {
@@ -67,7 +78,7 @@ export class DouyinVideoPublisher {
             }
         }
 
-        // 填写位置
+        // 填写位置（如果需要）
         if (content.location && this.features.supportLocation) {
             try {
                 console.log('📍 填写抖音位置...')
@@ -173,128 +184,287 @@ export class DouyinVideoPublisher {
         throw new Error(`${fieldType}填写失败，已尝试${maxRetries}次`)
     }
 
+    // 修复后的抖音表单填写方法
+    // 替换 douyin-video-publisher.js 中的相应方法
+
     /**
-     * 填写标题字段
+     * 修复后的标题填写方法
      */
     async fillTitleField(value) {
+        // 先传递值到页面环境，避免字符串插值问题
+        await this.executeScript(`window._tempTitleValue = ${JSON.stringify(value)};`);
+
         const script = `
-            (function() {
-                try {
-                    const selectors = ${JSON.stringify(this.selectors)};
-                    
-                    // 尝试主选择器
-                    let element = document.querySelector(selectors.titleInput);
-                    
-                    // 尝试备用选择器
-                    if (!element && selectors.titleInputAlt) {
-                        for (const selector of selectors.titleInputAlt) {
-                            element = document.querySelector(selector);
-                            if (element) break;
+        (function() {
+            try {
+                const value = window._tempTitleValue;
+                const selectors = ${JSON.stringify(this.selectors)};
+                
+                console.log('🔍 开始查找标题输入框...');
+                console.log('目标值:', value);
+                
+                // 查找标题输入框 - 使用更灵活的查找策略
+                let element = null;
+                
+                // 1. 尝试主选择器
+                if (selectors.titleInput) {
+                    element = document.querySelector(selectors.titleInput);
+                    if (element) {
+                        console.log('✅ 主选择器找到:', selectors.titleInput);
+                    }
+                }
+                
+                // 2. 尝试备用选择器
+                if (!element && selectors.titleInputAlt) {
+                    for (const selector of selectors.titleInputAlt) {
+                        element = document.querySelector(selector);
+                        if (element && element.placeholder && element.placeholder.includes('标题')) {
+                            console.log('✅ 备用选择器找到:', selector);
+                            break;
                         }
                     }
-                    
-                    if (!element) {
-                        throw new Error('未找到标题输入框');
-                    }
-
-                    console.log('找到标题输入框:', element.placeholder || element.className);
-                    
-                    // 确保元素可见并聚焦
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    element.focus();
-                    
-                    // 清空并设置新值
-                    element.value = '';
-                    element.value = '${value.replace(/'/g, "\\'")}';
-                    
-                    // 触发事件
-                    element.dispatchEvent(new Event('focus', { bubbles: true }));
-                    element.dispatchEvent(new Event('input', { bubbles: true }));
-                    element.dispatchEvent(new Event('change', { bubbles: true }));
-                    element.dispatchEvent(new Event('blur', { bubbles: true }));
-                    
-                    // 验证
-                    if (element.value === '${value.replace(/'/g, "\\'")}') {
-                        return { success: true, value: element.value };
-                    } else {
-                        throw new Error('标题值设置失败');
-                    }
-                    
-                } catch (e) {
-                    return { success: false, error: e.message };
                 }
-            })()
-        `
+                
+                // 3. 最后尝试通用选择器
+                if (!element) {
+                    const allInputs = document.querySelectorAll('input[type="text"], input:not([type])');
+                    for (const input of allInputs) {
+                        if (input.placeholder && input.placeholder.includes('标题')) {
+                            element = input;
+                            console.log('✅ 通用查找找到标题框');
+                            break;
+                        }
+                    }
+                }
+                
+                if (!element) {
+                    throw new Error('未找到标题输入框');
+                }
 
-        const result = await this.executeScript(script)
-        const fillResult = result.result.value
+                console.log('📝 开始填写标题...');
+                console.log('输入框当前状态:', {
+                    value: element.value,
+                    disabled: element.disabled,
+                    readonly: element.readOnly,
+                    placeholder: element.placeholder
+                });
+                
+                // 确保元素可见和可交互
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // 清空并填写 - 使用多种方法确保成功
+                element.focus();
+                
+                // 方法1: 选中所有内容后替换
+                element.select();
+                
+                // 方法2: 使用 execCommand (如果支持)
+                if (document.execCommand) {
+                    document.execCommand('selectAll', false, null);
+                    document.execCommand('insertText', false, value);
+                } else {
+                    // 方法3: 直接设置value
+                    element.value = value;
+                }
+                
+                // 触发所有相关事件
+                const events = [
+                    new Event('focus', { bubbles: true }),
+                    new Event('input', { bubbles: true }),
+                    new Event('change', { bubbles: true }),
+                    new KeyboardEvent('keyup', { bubbles: true }),
+                    new Event('blur', { bubbles: true })
+                ];
+                
+                events.forEach(event => {
+                    element.dispatchEvent(event);
+                });
+                
+                // 等待一下再验证
+                setTimeout(() => {
+                    console.log('✅ 标题填写完成，当前值:', element.value);
+                }, 100);
+                
+                // 验证填写结果
+                const success = element.value === value && element.value.length > 0;
+                
+                // 清理临时变量
+                delete window._tempTitleValue;
+                
+                return { 
+                    success: success, 
+                    value: element.value,
+                    expected: value,
+                    match: element.value === value
+                };
+                
+            } catch (e) {
+                console.error('标题填写异常:', e);
+                delete window._tempTitleValue;
+                return { success: false, error: e.message };
+            }
+        })()
+    `;
+
+        const result = await this.executeScript(script);
+        const fillResult = result.result.value;
 
         if (!fillResult.success) {
-            throw new Error(fillResult.error)
+            throw new Error(fillResult.error || '标题填写失败');
         }
+
+        // 双重验证
+        if (!fillResult.match) {
+            console.warn(`⚠️ 标题填写不匹配: 期望"${fillResult.expected}", 实际"${fillResult.value}"`);
+        }
+
+        return fillResult;
     }
 
     /**
-     * 填写描述字段
+     * 修复后的描述填写方法
      */
     async fillDescriptionField(value) {
+        // 先传递值到页面环境
+        await this.executeScript(`window._tempDescValue = ${JSON.stringify(value)};`);
+
         const script = `
-            (function() {
-                try {
-                    const selectors = ${JSON.stringify(this.selectors)};
-                    
-                    // 尝试主选择器
-                    let element = document.querySelector(selectors.descriptionEditor);
-                    
-                    // 尝试备用选择器
-                    if (!element && selectors.descriptionEditorAlt) {
-                        for (const selector of selectors.descriptionEditorAlt) {
-                            element = document.querySelector(selector);
-                            if (element) break;
+        (function() {
+            try {
+                const value = window._tempDescValue;
+                const selectors = ${JSON.stringify(this.selectors)};
+                
+                console.log('🔍 开始查找描述编辑器...');
+                console.log('目标值:', value);
+                
+                // 查找描述编辑器
+                let element = null;
+                
+                // 1. 尝试主选择器
+                if (selectors.descriptionEditor) {
+                    element = document.querySelector(selectors.descriptionEditor);
+                    if (element) {
+                        console.log('✅ 主选择器找到:', selectors.descriptionEditor);
+                    }
+                }
+                
+                // 2. 尝试备用选择器
+                if (!element && selectors.descriptionEditorAlt) {
+                    for (const selector of selectors.descriptionEditorAlt) {
+                        element = document.querySelector(selector);
+                        if (element) {
+                            console.log('✅ 备用选择器找到:', selector);
+                            break;
                         }
                     }
-                    
-                    if (!element) {
-                        throw new Error('未找到描述编辑器');
-                    }
-
-                    console.log('找到描述编辑器:', element.getAttribute('data-placeholder') || element.className);
-                    
-                    // 确保元素可见并聚焦
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    element.focus();
-                    
-                    // 清空并设置新内容
-                    element.innerHTML = '';
-                    element.textContent = '${value.replace(/'/g, "\\'")}';
-                    
-                    // 触发事件
-                    element.dispatchEvent(new Event('focus', { bubbles: true }));
-                    element.dispatchEvent(new InputEvent('input', { bubbles: true, data: '${value.replace(/'/g, "\\'")}' }));
-                    element.dispatchEvent(new Event('change', { bubbles: true }));
-                    element.dispatchEvent(new Event('blur', { bubbles: true }));
-                    
-                    // 验证
-                    if (element.textContent.trim() === '${value.replace(/'/g, "\\'")}') {
-                        return { success: true, content: element.textContent };
-                    } else {
-                        throw new Error('描述内容设置失败');
-                    }
-                    
-                } catch (e) {
-                    return { success: false, error: e.message };
                 }
-            })()
-        `
+                
+                // 3. 尝试通用富文本编辑器选择器
+                if (!element) {
+                    const editableElements = document.querySelectorAll('[contenteditable="true"]');
+                    for (const el of editableElements) {
+                        const placeholder = el.getAttribute('data-placeholder');
+                        if (placeholder && placeholder.includes('简介')) {
+                            element = el;
+                            console.log('✅ 通用查找找到描述编辑器');
+                            break;
+                        }
+                    }
+                }
+                
+                if (!element) {
+                    throw new Error('未找到描述编辑器');
+                }
 
-        const result = await this.executeScript(script)
-        const fillResult = result.result.value
+                console.log('📝 开始填写描述...');
+                console.log('编辑器当前状态:', {
+                    contentEditable: element.contentEditable,
+                    textContent: element.textContent,
+                    innerHTML: element.innerHTML,
+                    placeholder: element.getAttribute('data-placeholder')
+                });
+                
+                // 确保元素可见
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // 聚焦编辑器
+                element.focus();
+                
+                // 清空内容 - 富文本编辑器的清空方法
+                if (document.execCommand) {
+                    // 选中所有内容
+                    const range = document.createRange();
+                    range.selectNodeContents(element);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    
+                    // 删除选中内容
+                    document.execCommand('delete', false, null);
+                    
+                    // 插入新内容
+                    document.execCommand('insertText', false, value);
+                } else {
+                    // 备用方法：直接设置内容
+                    element.innerHTML = '';
+                    element.textContent = value;
+                }
+                
+                // 触发事件 - 富文本编辑器需要特殊的事件处理
+                const events = [
+                    new Event('focus', { bubbles: true }),
+                    new InputEvent('input', { 
+                        bubbles: true, 
+                        inputType: 'insertText',
+                        data: value 
+                    }),
+                    new Event('change', { bubbles: true }),
+                    new KeyboardEvent('keyup', { bubbles: true }),
+                    new Event('blur', { bubbles: true })
+                ];
+                
+                events.forEach(event => {
+                    element.dispatchEvent(event);
+                });
+                
+                // 等待处理
+                setTimeout(() => {
+                    console.log('✅ 描述填写完成，当前内容:', element.textContent);
+                }, 100);
+                
+                // 验证结果
+                const actualContent = element.textContent || element.innerText || '';
+                const success = actualContent.trim().length > 0 && 
+                               actualContent.trim() !== '添加作品简介' &&
+                               actualContent.includes(value.substring(0, 10)); // 检查前10个字符
+                
+                // 清理临时变量
+                delete window._tempDescValue;
+                
+                return { 
+                    success: success, 
+                    content: actualContent.trim(),
+                    expected: value,
+                    length: actualContent.trim().length
+                };
+                
+            } catch (e) {
+                console.error('描述填写异常:', e);
+                delete window._tempDescValue;
+                return { success: false, error: e.message };
+            }
+        })()
+    `;
+
+        const result = await this.executeScript(script);
+        const fillResult = result.result.value;
 
         if (!fillResult.success) {
-            throw new Error(fillResult.error)
+            throw new Error(fillResult.error || '描述填写失败');
         }
-    }
 
+        return fillResult;
+    }
     /**
      * 填写位置字段
      */
@@ -333,44 +503,8 @@ export class DouyinVideoPublisher {
     }
 
     // ==================== 平台特定操作方法 ====================
-
-    async clickUploadButton() {
-        const script = `
-            (function() {
-                const selectors = ${JSON.stringify(this.selectors)};
-                
-                // 尝试主上传按钮
-                let uploadButton = document.querySelector(selectors.uploadButton);
-                if (uploadButton && uploadButton.textContent.includes(selectors.uploadButtonText)) {
-                    uploadButton.click();
-                    return { success: true };
-                }
-                
-                // 尝试备用上传按钮
-                if (selectors.uploadButtonAlt) {
-                    for (const selector of selectors.uploadButtonAlt) {
-                        const button = document.querySelector(selector);
-                        if (button) {
-                            button.click();
-                            return { success: true };
-                        }
-                    }
-                }
-                
-                throw new Error('未找到上传按钮');
-            })()
-        `
-
-        const result = await this.executeScript(script)
-        if (!result.result.value.success) {
-            throw new Error('点击上传按钮失败')
-        }
-
-        await this.delay(2000)
-    }
-
     async uploadFileToDouyin(filePath) {
-        console.log('📤 上传文件到抖音...')
+        console.log('📤 直接注入文件到抖音...')
 
         if (!fs.existsSync(filePath)) {
             throw new Error(`文件不存在: ${filePath}`)
@@ -386,23 +520,50 @@ export class DouyinVideoPublisher {
                 try {
                     const selectors = ${JSON.stringify(this.selectors)};
                     
-                    // 查找文件输入框
-                    let fileInput = document.querySelector(selectors.fileInput);
+                    console.log('🔍 查找视频文件输入框...');
                     
-                    if (!fileInput && selectors.fileInputAlt) {
-                        for (const selector of selectors.fileInputAlt) {
-                            fileInput = document.querySelector(selector);
-                            if (fileInput) break;
+                    // 查找视频输入框 - 使用与测试相同的逻辑
+                    console.log('尝试主选择器:', selectors.fileInput);
+                    let videoInput = document.querySelector(selectors.fileInput);
+                    
+                    if (videoInput) {
+                        console.log('✅ 主选择器找到视频输入框');
+                    } else {
+                        console.log('❌ 主选择器未找到，尝试备选选择器...');
+                        
+                        if (selectors.fileInputAlt) {
+                            for (const selector of selectors.fileInputAlt) {
+                                console.log(\`尝试备选选择器: "\${selector}"\`);
+                                const inputs = document.querySelectorAll(selector);
+                                
+                                for (const input of inputs) {
+                                    const accept = input.accept;
+                                    if (accept && (accept.includes('video') || accept.includes('.mp4'))) {
+                                        videoInput = input;
+                                        console.log('✅ 备选选择器找到匹配的视频输入框');
+                                        break;
+                                    }
+                                }
+                                if (videoInput) break;
+                            }
                         }
                     }
                     
-                    if (!fileInput) {
-                        throw new Error('未找到文件上传输入框');
+                    if (!videoInput) {
+                        throw new Error('未找到视频文件输入框');
                     }
                     
-                    console.log('找到文件输入框');
+                    console.log('📁 开始文件注入...');
                     
-                    // 创建文件对象
+                    // 阻止文件选择对话框弹出
+                    const preventClick = (e) => {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        return false;
+                    };
+                    videoInput.addEventListener('click', preventClick, true);
+                    
+                    // 创建视频文件
                     const byteCharacters = atob('${base64Data}');
                     const byteNumbers = new Array(byteCharacters.length);
                     for (let i = 0; i < byteCharacters.length; i++) {
@@ -415,22 +576,38 @@ export class DouyinVideoPublisher {
                         lastModified: Date.now()
                     });
                     
-                    // 创建FileList
+                    console.log('文件创建成功:', file.name, file.type, file.size + ' bytes');
+                    
+                    // 设置文件到输入框
                     const dataTransfer = new DataTransfer();
                     dataTransfer.items.add(file);
                     
-                    // 设置文件到input
-                    Object.defineProperty(fileInput, 'files', {
+                    Object.defineProperty(videoInput, 'files', {
                         value: dataTransfer.files,
-                        configurable: true
+                        configurable: true,
+                        writable: true
                     });
                     
-                    // 触发事件
-                    fileInput.focus();
-                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                    fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    console.log('文件设置完成，当前files数量:', videoInput.files.length);
                     
-                    console.log('文件上传事件已触发');
+                    // 触发事件
+                    videoInput.focus();
+                    
+                    const changeEvent = new Event('change', { 
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    videoInput.dispatchEvent(changeEvent);
+                    console.log('✅ change事件已触发');
+                    
+                    const inputEvent = new Event('input', { bubbles: true });
+                    videoInput.dispatchEvent(inputEvent);
+                    console.log('✅ input事件已触发');
+                    
+                    // 清理事件监听器
+                    setTimeout(() => {
+                        videoInput.removeEventListener('click', preventClick, true);
+                    }, 1000);
                     
                     return {
                         success: true,
@@ -440,7 +617,7 @@ export class DouyinVideoPublisher {
                     };
                     
                 } catch (e) {
-                    console.error('文件上传失败:', e.message);
+                    console.error('文件注入失败:', e.message);
                     return { success: false, error: e.message };
                 }
             })()
@@ -450,11 +627,14 @@ export class DouyinVideoPublisher {
         const uploadResult = result.result.value
 
         if (!uploadResult.success) {
-            throw new Error(`文件上传失败: ${uploadResult.error}`)
+            throw new Error(`文件注入失败: ${uploadResult.error}`)
         }
 
-        console.log(`✅ 文件上传成功: ${uploadResult.fileName}`)
-        await this.delay(3000)
+        console.log(`✅ 文件注入成功: ${uploadResult.fileName}`)
+        console.log(`   文件大小: ${uploadResult.fileSize} bytes`)
+
+        // 等待抖音SDK处理文件 - 比微信需要更长时间
+        await this.delay(8000)
 
         return uploadResult
     }
@@ -687,7 +867,7 @@ export class DouyinVideoPublisher {
     }
 
     async executeScript(script) {
-        return await this.session.chromeController.executeScript(this.session, script)
+        return await this.chromeController.executeScript(this.session, script)
     }
 
     async delay(ms) {

@@ -111,7 +111,8 @@ export class WeChatVideoPublisher {
         throw new Error(`${fieldType}填写失败，已尝试${maxRetries}次`)
     }
 
-    // 在 wechat-video-publisher.js 中替换 uploadFileToWeChatIframe 方法
+    // 直接替换 wechat-video-publisher.js 中的 uploadFileToWeChatIframe 方法
+
     async uploadFileToWeChatIframe(filePath) {
         console.log('📤 上传文件到微信视频号...')
 
@@ -127,62 +128,64 @@ export class WeChatVideoPublisher {
         const script = `
         (function() {
             try {
-                const selectors = ${JSON.stringify(this.selectors)};
+                // 🔧 在 shadow DOM 中查找元素
+                const wujieApp = document.querySelector('wujie-app');
+                if (!wujieApp || !wujieApp.shadowRoot) {
+                    throw new Error('未找到 wujie-app 或 shadow DOM');
+                }
                 
-                // 🔧 修复：直接在当前页面查找元素，不查找 iframe
-                console.log('在当前页面查找上传元素...');
+                const shadowDoc = wujieApp.shadowRoot;
                 
                 // 查找上传区域
-                const uploadArea = document.querySelector(selectors.uploadArea);
+                const uploadArea = shadowDoc.querySelector('.center');
                 if (!uploadArea) {
                     throw new Error('未找到上传区域 (.center)');
                 }
-                console.log('✅ 找到上传区域');
                 
                 // 查找文件输入框
-                let fileInput = document.querySelector(selectors.fileInput);
-                
-                // 尝试备用选择器
-                if (!fileInput && selectors.fileInputAlt) {
-                    for (const selector of selectors.fileInputAlt) {
-                        fileInput = document.querySelector(selector);
-                        if (fileInput) {
-                            console.log('找到文件输入框，选择器:', selector);
-                            break;
-                        }
-                    }
-                }
-                
-                // 如果还没找到，查找所有 input
+                let fileInput = shadowDoc.querySelector('input[type="file"]');
                 if (!fileInput) {
-                    const allInputs = document.querySelectorAll('input');
-                    console.log('所有input元素:', allInputs.length);
-                    for (let input of allInputs) {
-                        if (input.type === 'file') {
-                            fileInput = input;
-                            console.log('找到隐藏的file input');
-                            break;
-                        }
-                    }
+                    fileInput = uploadArea.querySelector('input[type="file"]');
                 }
-                
                 if (!fileInput) {
                     throw new Error('未找到文件上传输入框');
                 }
                 
-                // 其余文件上传逻辑保持不变...
-                // [保持原有的文件创建和事件触发逻辑]
+                // 创建File对象
+                const byteCharacters = atob('${base64Data}');
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: '${mimeType}' });
+                const file = new File([blob], '${fileName}', {
+                    type: '${mimeType}',
+                    lastModified: Date.now()
+                });
+                
+                // 设置文件
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                Object.defineProperty(fileInput, 'files', {
+                    value: dataTransfer.files,
+                    configurable: true
+                });
+                
+                // 触发事件
+                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                uploadArea.dispatchEvent(new Event('drop', { 
+                    bubbles: true,
+                    dataTransfer: dataTransfer 
+                }));
                 
                 return {
                     success: true,
                     fileName: '${fileName}',
-                    fileSize: ${fileBuffer.length},
-                    mimeType: '${mimeType}',
-                    inputFound: true
+                    fileSize: ${fileBuffer.length}
                 };
                 
             } catch (e) {
-                console.error('文件上传失败:', e.message);
                 return { success: false, error: e.message };
             }
         })()
@@ -197,7 +200,6 @@ export class WeChatVideoPublisher {
 
         console.log(`✅ 文件上传成功: ${uploadResult.fileName}`)
         await this.delay(3000)
-
         return uploadResult
     }
     /**
@@ -566,6 +568,10 @@ export class WeChatVideoPublisher {
 
                 if (status.ready) {
                     console.log('✅ 发表按钮已激活且视频上传完成')
+                    console.log(`   删除按钮: ${status.videoReady ? '✅存在' : '❌缺失'}`)
+                    console.log(`   发表按钮: ${status.buttonReady ? '✅可用' : '❌禁用'}`)
+
+                    // 🔧 关键修复：立即返回，不再继续等待
                     return {
                         success: true,
                         waitTime: Date.now() - startTime
@@ -575,7 +581,14 @@ export class WeChatVideoPublisher {
                 const waitTime = Math.round((Date.now() - startTime) / 1000)
                 console.log(`⏳ 等待中... (${waitTime}s)`)
                 console.log(`   按钮状态: ${status.buttonReady ? '✅激活' : '❌未激活'}`)
-                console.log(`   视频状态: ${status.videoReady ? '✅完成' : '⏳上传中'}`)
+                console.log(`   视频状态: ${status.videoReady ? '✅完成' : '⏳处理中'}`)
+
+                // 🔧 新增：如果删除按钮存在但发表按钮禁用，可能是临时状态，缩短等待间隔
+                if (status.videoReady && !status.buttonReady) {
+                    console.log('   💡 视频已完成，等待按钮激活...')
+                    await this.delay(1000) // 缩短等待时间到1秒
+                    continue
+                }
 
                 await this.delay(checkInterval)
 
@@ -598,42 +611,55 @@ export class WeChatVideoPublisher {
      */
     async checkPublishReadiness() {
         const script = `
-            (function() {
-                try {
-                    const selectors = ${JSON.stringify(this.selectors)};
-                    const iframe = document.querySelector(selectors.iframe);
-                    if (!iframe || !iframe.contentDocument) {
-                        return { ready: false, error: '无法访问iframe' };
-                    }
-                    
-                    const iframeDoc = iframe.contentDocument;
-                    
-                    // 1. 检查发表按钮状态
-                    let buttonReady = false;
-                    const buttons = iframeDoc.querySelectorAll(selectors.publishButton);
-                    for (let button of buttons) {
-                        const buttonText = button.textContent.trim();
-                        if (selectors.publishButtonText.includes(buttonText)) {
-                            buttonReady = !button.disabled && !button.className.includes('disabled');
-                            break;
-                        }
-                    }
-                    
-                    // 2. 检查视频上传状态（基于删除按钮）
-                    const deleteButton = iframeDoc.querySelector(selectors.deleteButton);
-                    const videoReady = deleteButton && deleteButton.textContent.trim() === selectors.deleteButtonText;
-                    
-                    return {
-                        ready: buttonReady && videoReady,
-                        buttonReady: buttonReady,
-                        videoReady: videoReady
-                    };
-                    
-                } catch (e) {
-                    return { ready: false, error: e.message };
+        (function() {
+            try {
+                const selectors = ${JSON.stringify(this.selectors)};
+                const iframe = document.querySelector(selectors.iframe);
+                if (!iframe || !iframe.contentDocument) {
+                    return { ready: false, error: '无法访问iframe' };
                 }
-            })()
-        `
+                
+                const iframeDoc = iframe.contentDocument;
+                
+                // 1. 检查发表按钮状态
+                let buttonReady = false;
+                const buttons = iframeDoc.querySelectorAll(selectors.publishButton);
+                for (let button of buttons) {
+                    const buttonText = button.textContent.trim();
+                    if (selectors.publishButtonText.includes(buttonText)) {
+                        buttonReady = !button.disabled && !button.className.includes('disabled');
+                        break;
+                    }
+                }
+                
+                // 🔧 关键修复：更可靠的视频完成检测
+                // 检查删除按钮存在且文本正确
+                const deleteButton = iframeDoc.querySelector(selectors.deleteButton);
+                const videoReady = deleteButton && deleteButton.textContent.trim() === selectors.deleteButtonText;
+                
+                // 🔧 补充检查：如果删除按钮检测失败，检查是否还有"上传中"文本
+                let hasUploadingText = false;
+                if (!videoReady) {
+                    const bodyText = iframeDoc.body.textContent;
+                    hasUploadingText = bodyText.includes('上传中') || bodyText.includes('处理中');
+                }
+                
+                // 最终判断：必须有删除按钮且按钮可用，或者（按钮可用且没有上传中提示）
+                const ready = (videoReady && buttonReady) || (buttonReady && !hasUploadingText);
+                
+                return {
+                    ready: ready,
+                    buttonReady: buttonReady,
+                    videoReady: videoReady,
+                    hasUploadingText: hasUploadingText,
+                    deleteButtonText: deleteButton ? deleteButton.textContent.trim() : 'N/A'
+                };
+                
+            } catch (e) {
+                return { ready: false, error: e.message };
+            }
+        })()
+    `
 
         const result = await this.executeScript(script)
         return result.result.value

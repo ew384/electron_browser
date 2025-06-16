@@ -104,7 +104,7 @@ export const PLATFORM_CONFIGS = {
         status: 'stable',
 
         urls: {
-            upload: 'https://creator.douyin.com/creator-micro/content/upload',
+            upload: 'https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page',
             login: 'https://creator.douyin.com/login',
             dashboard: 'https://creator.douyin.com/creator-micro/home',
             help: 'https://creator.douyin.com/creator-micro/home/help'
@@ -112,42 +112,37 @@ export const PLATFORM_CONFIGS = {
 
         selectors: {
             // 上传相关
-            uploadButton: '.semi-button-content',
-            uploadButtonText: '上传视频',
-            uploadButtonAlt: [
-                'button:contains("上传视频")',
-                '.upload-btn',
-                '[data-testid="upload-button"]',
-                '.btn-upload'
-            ],
+            uploadButton: '.inner-p-HQwLO0',
 
             // 文件上传
-            fileInput: 'input[type="file"]',
+            fileInput: 'input[type="file"][accept*="video"]',
             fileInputAlt: [
+                'input[type="file"]', // 通用备选
                 'input[accept*="video"]',
+                'input[accept*=".mp4"]',
                 '.upload-input input[type="file"]',
                 '[data-testid*="upload"] input',
                 '.ant-upload input'
             ],
-
-            // 表单字段 - 使用最新的精确选择器
-            titleInput: '.semi-input.semi-input-default[placeholder="填写作品标题，为作品获得更多流量"]',
+            // 表单字段 - 优化后的选择器
+            titleInput: 'input.semi-input[placeholder*="填写作品标题"]',
             titleInputAlt: [
-                '.semi-input[placeholder*="填写作品标题"]',
-                'input[placeholder*="填写作品标题"]',
+                '.semi-input.semi-input-default[placeholder*="标题"]',
+                'input[placeholder*="填写作品标题，为作品获得更多流量"]', // 完整匹配作为备选
                 'input[placeholder*="标题"]',
                 '.title-input',
                 '[data-testid="title-input"]'
             ],
 
-            descriptionEditor: '.zone-container.editor-kit-container.editor.editor-comp-publish[data-placeholder="添加作品简介"]',
+            // 描述编辑器 - 简化选择器，提高稳定性
+            descriptionEditor: '[contenteditable="true"][data-placeholder*="简介"]',
             descriptionEditorAlt: [
-                '.editor-kit-container[data-placeholder="添加作品简介"]',
-                '.editor-kit-container.editor',
-                '[data-placeholder*="简介"]',
-                '.description-editor',
-                '[data-testid="description-editor"]',
-                '.ql-editor'
+                '.zone-container.editor-kit-container[contenteditable="true"]',
+                '.editor-kit-container.editor[data-placeholder="添加作品简介"]',
+                '[data-placeholder="添加作品简介"]',
+                '.zone-container[contenteditable="true"]',
+                '.editor-comp-publish[contenteditable="true"]',
+                '[contenteditable="true"]' // 最后的备选
             ],
 
             // 位置相关

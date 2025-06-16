@@ -80,8 +80,8 @@ export class MultiPlatformPublisher {
             console.log(`📊 并发发布完成: 成功 ${successResults.length}, 失败 ${failureResults.length}, 耗时 ${totalTime}ms`)
 
             // 6. 清理会话
-            const sessionIds = validSessions.map(s => s.id)
-            await chromeController.closeMultipleSessions(sessionIds)
+            //const sessionIds = validSessions.map(s => s.id)
+            //await chromeController.closeMultipleSessions(sessionIds)
 
             // 7. 返回详细结果
             return {

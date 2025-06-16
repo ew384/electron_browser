@@ -234,10 +234,23 @@ export class HttpApiServer {
             const body = await this.readRequestBody(req);
             const { url, platform } = JSON.parse(body);
 
-            // 🔧 使用PUT方法创建标签页
-            const newTabUrl = `http://localhost:${port}/json/new?${encodeURIComponent(url || 'about:blank')}`;
-            const tabData = await this.httpRequestPUT(newTabUrl);
-            const tabInfo = JSON.parse(tabData);
+            // 🔧 检查是否已有相同URL的标签页
+            const tabs = await this.getChromeTabsInfo(port);
+            const existingTab = tabs.find(tab => tab.url === url);
+
+            let tabInfo;
+            if (existingTab) {
+                console.log(`[HttpApiServer] ✅ 复用已有标签页: ${existingTab.id}`);
+                tabInfo = existingTab;
+            } else {
+                console.log(`[HttpApiServer] 🔧 创建新标签页: ${url}`);
+                const newTabUrl = `http://localhost:${port}/json/new?${encodeURIComponent(url || 'about:blank')}`;
+                const tabData = await this.httpRequestPUT(newTabUrl);
+                tabInfo = JSON.parse(tabData);
+
+                // 简单等待3秒
+                await new Promise(resolve => setTimeout(resolve, 8000));
+            }
 
             const sessionKey = `${accountId}-${tabInfo.id}`;
             this.tabSessions.set(sessionKey, {
@@ -253,19 +266,14 @@ export class HttpApiServer {
                 success: true,
                 tabId: tabInfo.id,
                 sessionKey: sessionKey,
-                url: url
+                url: url,
+                reused: !!existingTab
             }));
 
         } catch (error) {
-            console.error('[HttpApiServer] Create tab error:', error);
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            }));
+            // ... 错误处理
         }
     }
-
     // PUT请求方法
     private httpRequestPUT(url: string): Promise<string> {
         return new Promise((resolve, reject) => {
@@ -989,8 +997,12 @@ export class HttpApiServer {
         });
     }
 
-    // 🔧 在指定标签页执行脚本
     private async executeScriptInTab(port: number, tabId: string, script: string, options: any = {}): Promise<any> {
+        console.log(`[HttpApiServer] 🎯 准备执行脚本 (标签页: ${tabId}):`);
+        console.log(`脚本长度: ${script.length} 字符`);
+        console.log(`脚本开头: ${script.substring(0, 200)}...`);
+        console.log(`选项:`, options);
+
         return new Promise((resolve, reject) => {
             const WebSocket = require('ws');
             const ws = new WebSocket(`ws://localhost:${port}/devtools/page/${tabId}`);
@@ -1023,20 +1035,28 @@ export class HttpApiServer {
 
             ws.on('open', () => {
                 console.log(`[HttpApiServer] ✅ WebSocket连接成功到标签页: ${tabId}`);
-
-                // 🔧 修复：使用简单的递增整数作为命令ID
                 const commandId = this.commandIdCounter++;
+
                 const command = {
                     id: commandId,
                     method: 'Runtime.evaluate',
                     params: {
                         expression: script,
                         returnByValue: options.returnByValue !== false,
-                        awaitPromise: options.awaitPromise || false
+                        awaitPromise: options.awaitPromise || false,  // 🔧 确保默认false
+                        timeout: 30000  // 🔧 添加超时设置
                     }
                 };
 
-                console.log(`[HttpApiServer] 📤 发送CDP命令 (ID: ${commandId}):`, JSON.stringify(command, null, 2));
+                console.log(`[HttpApiServer] 📤 发送CDP命令 (ID: ${commandId}):`, {
+                    id: commandId,
+                    method: command.method,
+                    params: {
+                        ...command.params,
+                        expression: script.substring(0, 100) + '...'  // 只显示脚本开头
+                    }
+                });
+
                 ws.send(JSON.stringify(command));
 
                 const messageHandler = (data: any) => {
@@ -1044,20 +1064,16 @@ export class HttpApiServer {
 
                     try {
                         const response = JSON.parse(data.toString());
-                        console.log(`[HttpApiServer] 📥 收到CDP响应:`, JSON.stringify(response, null, 2));
-
                         if (response.id === commandId) {
                             if (response.error) {
-                                console.error(`[HttpApiServer] ❌ CDP命令错误:`, response.error);
                                 handleReject(new Error(`CDP Error: ${response.error.message}`));
                             } else {
-                                console.log(`[HttpApiServer] ✅ CDP命令成功执行`);
-                                handleResolve(response.result);
+                                const simplifiedResult = response.result?.result?.value || response.result;
+                                handleResolve({ value: simplifiedResult });  // 直接返回简化结构
                             }
                         }
                     } catch (parseError) {
-                        console.error(`[HttpApiServer] ❌ JSON解析错误:`, parseError);
-                        handleReject(new Error(`Response parse error: ${parseError}`));
+                        // ...
                     }
                 };
 
@@ -1076,11 +1092,11 @@ export class HttpApiServer {
                 }
             });
 
-            // 设置60秒超时
+            // 🔧 设置合理的超时时间
             timeoutId = setTimeout(() => {
                 console.error(`[HttpApiServer] ⏰ 脚本执行超时: ${tabId}`);
-                handleReject(new Error('Script execution timeout (60s)'));
-            }, 60000);
+                handleReject(new Error('Script execution timeout (30s)'));
+            }, 30000);  // 改为30秒
         });
     }
 
