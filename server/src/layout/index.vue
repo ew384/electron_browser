@@ -66,10 +66,12 @@ export default {
 @import '~@/styles/variables.scss';
 
 .app-wrapper {
-  @include clearfix;
   position: relative;
-  height: 100%;
+  height: 100vh;
+  /* 确保总高度是100vh */
   width: 100%;
+  display: flex;
+  /* 使用flex布局 */
 
   &.mobile.openSidebar {
     position: fixed;
@@ -77,14 +79,14 @@ export default {
   }
 }
 
-.drawer-bg {
-  background: #000;
-  opacity: 0.3;
-  width: 100%;
-  top: 0;
-  height: 100%;
-  position: absolute;
-  z-index: 999;
+.main-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  /* 明确设置高度 */
+  overflow: hidden;
+  /* 防止溢出 */
 }
 
 .fixed-header {
@@ -94,6 +96,8 @@ export default {
   z-index: 9;
   width: calc(100% - #{$sideBarWidth});
   transition: width 0.28s;
+  flex-shrink: 0;
+  /* 防止收缩 */
 }
 
 .hideSidebar .fixed-header {

@@ -116,6 +116,20 @@ export const constantRoutes = [
     ]
   },
   {
+    path: '/workflow',
+    component: Layout,
+    redirect: '/workflow/config',
+    meta: { title: 'workflow', icon: 'el-icon-s-operation' },
+    children: [
+      {
+        path: 'config',
+        component: require('@/views/workflow/index').default,
+        name: 'WorkflowConfig',
+        meta: { title: 'workflow', icon: 'el-icon-s-operation', affix: true }
+      }
+    ]
+  },
+  {
     path: '/crx',
     component: Layout,
     redirect: '/crx/store',

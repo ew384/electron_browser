@@ -19,7 +19,9 @@ export default {
     theme: 'Theme',
     i18n: 'I18n',
     externalLink: 'External Link',
-    profile: 'Profile'
+    profile: 'Profile',
+    workflow: 'Multi-Platform Publishing',
+    workflow_config: 'Workflow Config'
   },
   navbar: {
     dashboard: 'Dashboard',
