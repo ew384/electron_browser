@@ -231,12 +231,14 @@ export const PLATFORM_CONFIGS = {
         }
     },
 
+    // 在 platforms.js 中的 xiaohongshu 配置部分，替换现有的 selectors 和其他配置
+
     xiaohongshu: {
         id: 'xiaohongshu',
         name: '小红书',
         icon: '📝',
         color: 'bg-red-500',
-        status: 'testing',
+        status: 'stable', // 从 'testing' 改为 'stable'
 
         urls: {
             upload: 'https://creator.xiaohongshu.com/publish/publish?source=official',
@@ -246,30 +248,49 @@ export const PLATFORM_CONFIGS = {
         },
 
         selectors: {
+            // 文件上传 - 基于测试成功的选择器
             fileInput: 'input[type="file"]',
-            uploadArea: ['.upload-area', '.ant-upload'],
+            uploadArea: '.upload-input',
 
-            titleInput: '.d-text[placeholder*="填写标题"]',
-            titleInputAlt: 'input[placeholder*="填写标题"]',
+            // 表单字段 - 基于测试成功的选择器
+            titleInput: 'input[placeholder*="标题"]',
 
-            descriptionEditor: '.ql-editor',
-            descriptionPlaceholder: 'p[data-placeholder="输入正文描述"]',
+            descriptionEditor: '.ql-editor[contenteditable="true"]',
 
-            locationSelect: '.d-text.d-select-placeholder',
-            locationInput: '.d-input input',
-            locationOption: '.d-select-option',
+            // 位置选择 - 基于测试成功的选择器
+            locationSelector: '.d-select-placeholder',
+            locationInputFilter: '.d-select-input-filter',
+            locationHiddenInput: '.d-select-input-filter input',
+            locationOptions: '.d-grid-item .item',
+            locationOptionName: '.name',
 
-            publishButton: '.d-button-content',
-            publishButtonAlt: 'button[class*="primary"]',
+            // 发布按钮 - 基于测试成功的选择器
+            publishButton: 'button.publishBtn',
+            publishButtonAlt: 'button[class*="publishBtn"]',
+            publishButtonText: '发布',
 
+            // 状态检查
             uploadProgress: ['.progress', '[class*="progress"]'],
-            successMessage: ['.success', '[class*="success"]']
+            successMessage: ['.success', '[class*="success"]'],
+            errorMessage: ['.error', '[class*="error"]']
         },
 
         fields: {
-            title: { required: true, maxLength: 20 },
-            description: { required: true, maxLength: 1000 },
-            location: { required: false, maxLength: 50 }
+            title: {
+                required: true,
+                maxLength: 20,
+                note: '吸引人的标题，最多20字符'
+            },
+            description: {
+                required: true,
+                maxLength: 1000,
+                note: '详细描述，支持话题标签和换行'
+            },
+            location: {
+                required: false,
+                maxLength: 50,
+                note: '添加位置信息提高曝光'
+            }
         },
 
         features: {
@@ -277,13 +298,16 @@ export const PLATFORM_CONFIGS = {
             supportLocation: true,
             autoPublish: true,
             supportEmoji: true,
-            supportMultiImage: true
+            supportHashtags: true,
+            needWaitFormActivation: true, // 新增：需要等待表单激活
+            hasHiddenLocationInput: true  // 新增：有隐藏的位置输入框
         },
 
         timing: {
             pageLoadTimeout: 15000,
             uploadTimeout: 60000,
             processingTimeout: 30000,
+            formActivationTimeout: 10000, // 新增：表单激活等待时间
             publishTimeout: 10000,
             retryDelay: 2000,
             maxRetries: 3

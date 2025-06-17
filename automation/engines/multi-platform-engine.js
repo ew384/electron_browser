@@ -1,6 +1,7 @@
 // automation/engines/multi-platform-engine.js - 并发版本
 import { WeChatVideoPublisher } from './wechat-video-publisher.js'
 import { DouyinVideoPublisher } from './douyin-video-publisher.js'
+import { XiaohongshuVideoPublisher } from './xiaohongshu-video-publisher.js'
 import { getPlatformConfig } from '../config/platforms.js'
 
 export class MultiPlatformPublisher {
@@ -15,6 +16,7 @@ export class MultiPlatformPublisher {
     initializePublishers() {
         this.publishers.set('wechat', WeChatVideoPublisher)
         this.publishers.set('douyin', DouyinVideoPublisher)
+        this.publishers.set('xiaohongshu', XiaohongshuVideoPublisher)
     }
 
     // 🔧 新增：真正的并发多平台发布
