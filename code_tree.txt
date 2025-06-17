@@ -21,7 +21,8 @@
 │   ├── engines
 │   │   ├── douyin-video-publisher.js
 │   │   ├── multi-platform-engine.js
-│   │   └── wechat-video-publisher.js
+│   │   ├── wechat-video-publisher.js
+│   │   └── xiaohongshu-video-publisher.js
 │   ├── integration
 │   │   └── browser-integration.js
 │   ├── logs
@@ -39,7 +40,8 @@
 │   ├── test-template.json
 │   ├── test_wechat.sh
 │   ├── utils
-│   │   └── element-analyzer.js
+│   │   ├── element-analyzer.js
+│   │   └── test-video-generator.js
 │   ├── video-account.json
 │   ├── video-accounts.json
 │   ├── video-content.json
@@ -342,4 +344,4 @@
     ├── tsconfig.json
     └── vue.config.js
 
-110 directories, 232 files
+110 directories, 234 files
