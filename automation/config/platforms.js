@@ -299,18 +299,26 @@ export const PLATFORM_CONFIGS = {
             autoPublish: true,
             supportEmoji: true,
             supportHashtags: true,
-            needWaitFormActivation: true, // 新增：需要等待表单激活
-            hasHiddenLocationInput: true  // 新增：有隐藏的位置输入框
+            needWaitFormActivation: true,
+            hasHiddenLocationInput: true,
+            // 🔧 新增：小红书特有功能标识
+            needVideoProcessing: true,  // 需要等待视频处理
+            hasUploadProgress: true,    // 有上传进度显示
+            needWaitPublishButton: true // 需要等待发布按钮激活
         },
 
         timing: {
             pageLoadTimeout: 15000,
-            uploadTimeout: 60000,
-            processingTimeout: 30000,
-            formActivationTimeout: 10000, // 新增：表单激活等待时间
-            publishTimeout: 10000,
+            uploadTimeout: 90000,      // 🔧 增加：从60秒增加到90秒
+            processingTimeout: 90000,  // 🔧 增加：从30秒增加到90秒
+            formActivationTimeout: 15000, // 🔧 增加：从10秒增加到15秒
+            publishTimeout: 45000,     // 🔧 增加：从10秒增加到45秒
             retryDelay: 2000,
-            maxRetries: 3
+            maxRetries: 3,
+            // 🔧 新增：视频处理相关超时
+            videoProcessingTimeout: 120000, // 2分钟视频处理超时
+            publishButtonTimeout: 60000,    // 1分钟发布按钮等待超时
+            statusCheckInterval: 2000       // 2秒状态检查间隔
         }
     },
 
