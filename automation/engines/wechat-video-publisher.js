@@ -538,85 +538,17 @@ export class WeChatVideoPublisher {
         if (!publishResult.success) {
             return publishResult
         }
-        // 🔧 增加等待时间：从3秒增加到10秒
-        console.log('⏳ 等待发布处理 (10秒)...')
-        await this.delay(10000)
 
-        // 🔧 轮询检查发布状态，最多等待60秒
-        const maxWaitTime = 60000 // 60秒
-        const checkInterval = 5000 // 5秒检查一次
-        const startTime = Date.now()
+        // 等待发布处理
+        await this.delay(3000)
 
-        console.log('🔄 开始轮询检查发布状态...')
-
-        while (Date.now() - startTime < maxWaitTime) {
-            const publishStatus = await this.checkPublishStatus()
-            const waitTime = Math.round((Date.now() - startTime) / 1000)
-
-            console.log(`📊 发布状态检查 (${waitTime}s): ${publishStatus.status} - ${publishStatus.message}`)
-
-            if (publishStatus.status === 'success') {
-                console.log('🎉 微信发布成功!')
-                return {
-                    success: true,
-                    publishStatus: publishStatus,
-                    waitTime: readyResult.waitTime,
-                    totalPublishTime: Date.now() - startTime
-                }
-            }
-
-            if (publishStatus.status === 'error') {
-                console.log('❌ 微信发布失败!')
-                return {
-                    success: false,
-                    error: publishStatus.message,
-                    publishStatus: publishStatus
-                }
-            }
-
-            // 如果状态是 unknown 或 publishing，继续等待
-            if (publishStatus.status === 'unknown' || publishStatus.status === 'publishing') {
-                console.log(`⏳ 继续等待发布完成... (${waitTime}s/${maxWaitTime / 1000}s)`)
-                await this.delay(checkInterval)
-                continue
-            }
-        }
-
-        // 🔧 超时后进行最终检查
-        console.log('⏰ 发布状态检查超时，进行最终确认...')
-        const finalStatus = await this.checkPublishStatusAdvanced()
-
-        if (finalStatus.status === 'success') {
-            console.log('🎉 最终检查确认微信发布成功!')
-            return {
-                success: true,
-                publishStatus: finalStatus,
-                waitTime: readyResult.waitTime,
-                totalPublishTime: maxWaitTime,
-                note: '超时后最终检查成功'
-            }
-        }
-
-        // 🔧 如果最终还是无法确定，但没有明确错误，认为可能成功
-        if (finalStatus.status === 'unknown' && !finalStatus.message.includes('错误') && !finalStatus.message.includes('失败')) {
-            console.log('⚠️ 无法确定发布状态，但未检测到错误，可能发布成功')
-            return {
-                success: true, // 🔧 改为认为成功
-                publishStatus: {
-                    status: 'likely_success',
-                    message: '无法确定发布状态，但点击操作成功，可能已发布'
-                },
-                waitTime: readyResult.waitTime,
-                totalPublishTime: maxWaitTime,
-                note: '状态不明但操作成功，建议手动确认'
-            }
-        }
+        // 检查发布状态
+        const publishStatus = await this.checkPublishStatus()
 
         return {
-            success: false,
-            error: '发布状态检查超时且最终状态不明',
-            publishStatus: finalStatus,
-            suggestion: '请手动检查微信视频号是否发布成功'
+            success: true,
+            publishStatus: publishStatus,
+            waitTime: readyResult.waitTime
         }
     }
 
@@ -777,221 +709,55 @@ export class WeChatVideoPublisher {
      */
     async clickPublishButton() {
         const script = `
-        (function() {
-            try {
-                console.log('🔍 开始查找发表按钮...');
-                
-                const iframe = document.querySelector('iframe');
-                if (!iframe || !iframe.contentDocument) {
-                    return { success: false, error: '无法访问iframe', step: 'iframe_access' };
-                }
-                
-                const iframeDoc = iframe.contentDocument;
-                console.log('✅ iframe访问成功');
-                
-                // 🔧 增强按钮查找逻辑
-                let publishButton = null;
-                const buttons = iframeDoc.querySelectorAll('button');
-                
-                console.log('🔍 找到 ' + buttons.length + ' 个按钮');
-                
-                // 详细分析每个按钮
-                const buttonAnalysis = [];
-                for (let i = 0; i < buttons.length; i++) {
-                    const button = buttons[i];
-                    const buttonText = button.textContent.trim();
-                    const isDisabled = button.disabled;
-                    const className = button.className;
-                    
-                    buttonAnalysis.push({
-                        index: i,
-                        text: buttonText,
-                        disabled: isDisabled,
-                        className: className,
-                        isPublishButton: buttonText === '发表' || buttonText === '发布'
-                    });
-                    
-                    console.log('按钮' + i + ': "' + buttonText + '", disabled: ' + isDisabled);
-                    
-                    // 找到发表按钮
-                    if (buttonText === '发表' || buttonText === '发布') {
-                        publishButton = button;
-                        console.log('✅ 找到发表按钮: "' + buttonText + '", disabled: ' + isDisabled);
-                    }
-                }
-                
-                if (!publishButton) {
-                    return { 
-                        success: false, 
-                        error: '未找到发表按钮',
-                        step: 'button_not_found',
-                        buttonAnalysis: buttonAnalysis
-                    };
-                }
-                
-                // 🔧 详细检查按钮状态
-                const buttonRect = publishButton.getBoundingClientRect();
-                const computedStyle = window.getComputedStyle(publishButton);
-                
-                const buttonStatus = {
-                    text: publishButton.textContent.trim(),
-                    disabled: publishButton.disabled,
-                    visible: buttonRect.width > 0 && buttonRect.height > 0,
-                    opacity: computedStyle.opacity,
-                    pointerEvents: computedStyle.pointerEvents,
-                    className: publishButton.className,
-                    position: {
-                        top: buttonRect.top,
-                        left: buttonRect.left,
-                        width: buttonRect.width,
-                        height: buttonRect.height
-                    }
-                };
-                
-                console.log('📊 按钮状态:', JSON.stringify(buttonStatus));
-                
-                if (publishButton.disabled) {
-                    return { 
-                        success: false, 
-                        error: '发表按钮已禁用',
-                        step: 'button_disabled',
-                        buttonStatus: buttonStatus,
-                        buttonAnalysis: buttonAnalysis
-                    };
-                }
-                
-                if (buttonRect.width === 0 || buttonRect.height === 0) {
-                    return { 
-                        success: false, 
-                        error: '发表按钮不可见',
-                        step: 'button_invisible',
-                        buttonStatus: buttonStatus
-                    };
-                }
-                
-                // 🔧 尝试点击前先滚动和聚焦
-                console.log('📍 滚动到按钮位置...');
-                publishButton.scrollIntoView({ 
-                    behavior: 'smooth', 
-                    block: 'center',
-                    inline: 'center'
-                });
-                
-                console.log('🎯 聚焦按钮...');
-                publishButton.focus();
-                
-                console.log('👆 执行点击...');
-                
-                // 🔧 多种点击方式尝试
-                const clickResults = [];
-                
-                // 方式1: 直接click()
+            (function() {
                 try {
+                    const selectors = ${JSON.stringify(this.selectors)};
+                    const iframe = document.querySelector(selectors.iframe);
+                    if (!iframe || !iframe.contentDocument) {
+                        return { success: false, error: '无法访问iframe' };
+                    }
+                    
+                    const iframeDoc = iframe.contentDocument;
+                    
+                    // 查找发表按钮
+                    let publishButton = null;
+                    const buttons = iframeDoc.querySelectorAll(selectors.publishButton);
+                    for (let button of buttons) {
+                        const buttonText = button.textContent.trim();
+                        if (selectors.publishButtonText.includes(buttonText)) {
+                            publishButton = button;
+                            break;
+                        }
+                    }
+                    
+                    if (!publishButton) {
+                        return { success: false, error: '未找到发表按钮' };
+                    }
+                    
+                    if (publishButton.disabled) {
+                        return { success: false, error: '发表按钮已禁用' };
+                    }
+                    
+                    // 滚动到按钮并点击
+                    publishButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    publishButton.focus();
                     publishButton.click();
-                    clickResults.push({ method: 'direct_click', success: true });
-                    console.log('✅ 直接点击成功');
+                    
+                    console.log('✅ 已点击发表按钮');
+                    
+                    return {
+                        success: true,
+                        buttonText: publishButton.textContent.trim()
+                    };
+                    
                 } catch (e) {
-                    clickResults.push({ method: 'direct_click', success: false, error: e.message });
-                    console.log('❌ 直接点击失败:', e.message);
+                    return { success: false, error: e.message };
                 }
-                
-                // 方式2: 模拟鼠标事件
-                try {
-                    const clickEvent = new MouseEvent('click', {
-                        bubbles: true,
-                        cancelable: true,
-                        view: iframeDoc.defaultView
-                    });
-                    publishButton.dispatchEvent(clickEvent);
-                    clickResults.push({ method: 'mouse_event', success: true });
-                    console.log('✅ 鼠标事件触发成功');
-                } catch (e) {
-                    clickResults.push({ method: 'mouse_event', success: false, error: e.message });
-                    console.log('❌ 鼠标事件触发失败:', e.message);
-                }
-                
-                // 🔧 检查点击后的按钮状态（立即检查）
-                const afterClickStatus = {
-                    buttonStillExists: !!publishButton,
-                    buttonDisabled: publishButton.disabled,
-                    buttonText: publishButton.textContent.trim(),
-                    pageUrl: window.location.href
-                };
-                
-                console.log('📊 点击后立即状态:', JSON.stringify(afterClickStatus));
-                
-                return {
-                    success: true,
-                    step: 'click_completed',
-                    buttonStatus: buttonStatus,
-                    clickResults: clickResults,
-                    afterClickStatus: afterClickStatus,
-                    buttonAnalysis: buttonAnalysis
-                };
-                
-            } catch (e) {
-                console.error('❌ 点击发表按钮异常:', e);
-                return { 
-                    success: false, 
-                    error: e.message,
-                    step: 'exception',
-                    stack: e.stack
-                };
-            }
-        })()
-    `;
+            })()
+        `
+
         const result = await this.executeScript(script)
-        console.log('📊 原始执行结果:', result);
-        const clickResult = result.result?.value;
-
-        if (!clickResult) {
-            console.error('❌ 脚本执行返回空结果，可能有语法错误');
-            console.error('📊 完整结果对象:', JSON.stringify(result, null, 2));
-            return { success: false, error: '脚本执行返回空结果' };
-        }
-
-        // 🔧 详细日志输出
-        console.log('📊 点击发表按钮详细结果:');
-        console.log('   成功:', clickResult.success);
-        console.log('   步骤:', clickResult.step);
-
-        if (clickResult.buttonAnalysis) {
-            console.log('   按钮分析:');
-            clickResult.buttonAnalysis.forEach(btn => {
-                console.log(`     ${btn.index}: "${btn.text}" (disabled: ${btn.disabled})`);
-            });
-        }
-
-        if (clickResult.buttonStatus) {
-            console.log('   目标按钮状态:', clickResult.buttonStatus);
-        }
-
-        if (clickResult.clickResults) {
-            console.log('   点击尝试结果:');
-            clickResult.clickResults.forEach(result => {
-                console.log(`     ${result.method}: ${result.success ? '成功' : '失败'}`);
-                if (!result.success && result.error) {
-                    console.log(`       错误: ${result.error}`);
-                }
-            });
-        }
-
-        if (clickResult.afterClickStatus) {
-            console.log('   点击后状态:', clickResult.afterClickStatus);
-        }
-
-        if (!clickResult.success) {
-            console.error(`❌ 点击发表按钮失败: ${clickResult.error}`);
-            throw new Error(clickResult.error || '点击发表按钮失败');
-        }
-
-        console.log('✅ 发表按钮点击流程完成');
-
-        // 🔧 等待页面反应
-        console.log('⏳ 等待页面反应 (3秒)...');
-        await this.delay(3000);
-
-        return clickResult;
+        return result.result.value
     }
 
     /**
@@ -999,325 +765,56 @@ export class WeChatVideoPublisher {
      */
     async checkPublishStatus() {
         console.log('📊 检查发布状态...')
-        const script = `
-        (function() {
-            try {
-                const iframe = document.querySelector('iframe');
-                if (!iframe || !iframe.contentDocument) {
-                    return { 
-                        status: 'error', 
-                        message: '无法访问iframe',
-                        debug: { iframeExists: !!iframe }
-                    };
-                }
-                
-                const iframeDoc = iframe.contentDocument;
-                
-                // 检查成功提示元素
-                const successSelectors = [
-                    '.success-message',
-                    '.toast-success', 
-                    '[class*="success"]',
-                    '.weui-desktop-toast'
-                ];
-                
-                console.log('🔍 检查成功提示元素...');
-                for (const selector of successSelectors) {
-                    const elements = iframeDoc.querySelectorAll(selector);
-                    console.log('选择器 ' + selector + ' 找到 ' + elements.length + ' 个元素');
-                    
-                    for (let i = 0; i < elements.length; i++) {
-                        const el = elements[i];
-                        const text = el.textContent.trim();
-                        const isVisible = el.offsetParent !== null;
-                        
-                        console.log('  元素' + i + ': "' + text + '", 可见: ' + isVisible);
-                        
-                        if (isVisible && text.includes('成功')) {
-                            console.log('✅ 找到成功提示!');
-                            return {
-                                status: 'success',
-                                message: text,
-                                method: 'success_element'
-                            };
-                        }
-                    }
-                }
-                
-                // 检查URL变化
-                const currentUrl = window.location.href;
-                console.log('🔍 当前URL: ' + currentUrl);
-                
-                if (currentUrl.includes('success') || currentUrl.includes('complete')) {
-                    console.log('✅ URL表明发布成功!');
-                    return {
-                        status: 'success',
-                        message: '页面已跳转到成功页面',
-                        method: 'url_change'
-                    };
-                }
-                
-                // 检查按钮状态变化
-                const publishButtons = iframeDoc.querySelectorAll('button');
-                console.log('🔍 检查 ' + publishButtons.length + ' 个按钮的状态...');
-                
-                for (let i = 0; i < publishButtons.length; i++) {
-                    const btn = publishButtons[i];
-                    const text = btn.textContent.trim();
-                    console.log('  按钮' + i + ': "' + text + '", disabled: ' + btn.disabled);
-                    
-                    if (text === '发布中' || text === '提交中') {
-                        console.log('⏳ 检测到发布中状态!');
-                        return {
-                            status: 'publishing',
-                            message: '正在发布中',
-                            method: 'button_state'
-                        };
-                    }
-                }
-                
-                // 检查页面内容
-                const bodyText = iframeDoc.body.textContent || '';
-                const hasPublishSuccess = bodyText.includes('发布成功') || bodyText.includes('发表成功');
-                const hasError = bodyText.includes('失败') || bodyText.includes('错误');
-                
-                console.log('🔍 页面内容检查: 成功文本=' + hasPublishSuccess + ', 错误文本=' + hasError);
-                
-                if (hasPublishSuccess) {
-                    console.log('✅ 页面内容表明发布成功!');
-                    return {
-                        status: 'success',
-                        message: '检测到发布成功文本',
-                        method: 'content_text'
-                    };
-                }
-                
-                if (hasError) {
-                    console.log('❌ 页面内容表明发布失败!');
-                    return {
-                        status: 'error',
-                        message: '检测到错误信息',
-                        method: 'error_text'
-                    };
-                }
-                
-                console.log('❓ 无法确定发布状态');
-                return {
-                    status: 'unknown',
-                    message: '无法确定发布状态',
-                    method: 'comprehensive_check'
-                };
-                
-            } catch (e) {
-                console.error('❌ 状态检查异常:', e);
-                return { 
-                    status: 'error', 
-                    message: e.message,
-                    method: 'exception'
-                };
-            }
-        })()
-    `;
-
-        const result = await this.executeScript(script)
-        console.log('📊 状态检查原始结果:', result);
-
-        const status = result.result?.value;
-
-        if (!status) {
-            console.error('❌ 状态检查脚本执行返回空结果');
-            return { status: 'error', message: '状态检查脚本执行失败' };
-        }
-
-        console.log(`📊 发布状态检查结果:`);
-        console.log(`   状态: ${status.status}`);
-        console.log(`   消息: ${status.message}`);
-        console.log(`   检查方法: ${status.method || 'unknown'}`);
-        return status;
-    }
-    async checkPublishStatusAdvanced() {
-        console.log('📊 进行增强版发布状态检查...')
 
         const script = `
             (function() {
                 try {
-                    const iframe = document.querySelector('iframe');
+                    const selectors = ${JSON.stringify(this.selectors)};
+                    const iframe = document.querySelector(selectors.iframe);
                     if (!iframe || !iframe.contentDocument) {
-                        return { 
-                            status: 'error', 
-                            message: '无法访问iframe',
-                            method: 'iframe_error'
-                        };
+                        return { status: 'unknown', message: '无法访问iframe' };
                     }
                     
                     const iframeDoc = iframe.contentDocument;
                     
-                    // 🔧 详细检查各种成功标志
-                    const checks = [];
-                    
-                    // 检查1: 成功提示文本 (更全面)
-                    const successTexts = ['发表成功', '发布成功', '提交成功', '已发布', '发表完成'];
-                    const bodyText = iframeDoc.body.textContent || '';
-                    
-                    for (const successText of successTexts) {
-                        if (bodyText.includes(successText)) {
-                            checks.push({
-                                type: 'success_text',
-                                found: true,
-                                text: successText
-                            });
-                            console.log('✅ 找到成功文本: ' + successText);
+                    // 检查成功提示
+                    for (let selector of selectors.successMessage) {
+                        const element = iframeDoc.querySelector(selector);
+                        if (element && element.textContent.includes('成功')) {
                             return {
                                 status: 'success',
-                                message: '检测到发布成功: ' + successText,
-                                method: 'success_text'
+                                message: element.textContent.trim()
                             };
                         }
                     }
-                    checks.push({ type: 'success_text', found: false });
                     
-                    // 检查2: URL变化 (更详细)
+                    // 检查页面跳转
                     const currentUrl = window.location.href;
-                    console.log('📍 当前URL: ' + currentUrl);
-                    
-                    const urlIndicators = ['success', 'complete', 'published', 'done'];
-                    for (const indicator of urlIndicators) {
-                        if (currentUrl.includes(indicator)) {
-                            checks.push({
-                                type: 'url_change',
-                                found: true,
-                                indicator: indicator
-                            });
-                            console.log('✅ URL表明成功: ' + indicator);
-                            return {
-                                status: 'success',
-                                message: 'URL变化表明发布成功',
-                                method: 'url_change'
-                            };
-                        }
-                    }
-                    checks.push({ type: 'url_change', found: false });
-                    
-                    // 检查3: 发表按钮状态变化
-                    const publishButtons = iframeDoc.querySelectorAll('button');
-                    let foundPublishButton = false;
-                    
-                    for (const btn of publishButtons) {
-                        const text = btn.textContent.trim();
-                        if (text === '发表' || text === '发布') {
-                            foundPublishButton = true;
-                            checks.push({
-                                type: 'publish_button',
-                                found: true,
-                                disabled: btn.disabled,
-                                text: text
-                            });
-                            
-                            // 如果按钮被禁用，可能正在发布
-                            if (btn.disabled) {
-                                console.log('⏳ 发表按钮已禁用，可能正在发布');
-                                return {
-                                    status: 'publishing',
-                                    message: '发表按钮已禁用，正在发布中',
-                                    method: 'button_disabled'
-                                };
-                            }
-                            break;
-                        }
-                    }
-                    
-                    if (!foundPublishButton) {
-                        checks.push({ type: 'publish_button', found: false });
-                        console.log('🤔 发表按钮消失，可能已发布或页面已跳转');
+                    if (currentUrl.includes('success') || currentUrl.includes('complete')) {
                         return {
-                            status: 'likely_success',
-                            message: '发表按钮消失，可能已发布成功',
-                            method: 'button_disappeared'
+                            status: 'success',
+                            message: '页面已跳转，发布可能成功'
                         };
                     }
                     
-                    // 检查4: 页面内容变化
-                    const contentIndicators = [
-                        '发表成功', '发布成功', '提交成功',
-                        '已发表', '已发布', '已提交',
-                        '发表完成', '发布完成'
-                    ];
-                    
-                    for (const indicator of contentIndicators) {
-                        if (bodyText.includes(indicator)) {
-                            checks.push({
-                                type: 'content_indicator',
-                                found: true,
-                                indicator: indicator
-                            });
-                            console.log('✅ 找到内容成功指示: ' + indicator);
-                            return {
-                                status: 'success',
-                                message: '内容表明发布成功: ' + indicator,
-                                method: 'content_indicator'
-                            };
-                        }
-                    }
-                    checks.push({ type: 'content_indicator', found: false });
-                    
-                    // 检查5: 错误信息
-                    const errorIndicators = ['失败', '错误', '网络异常', '请重试'];
-                    for (const errorText of errorIndicators) {
-                        if (bodyText.includes(errorText)) {
-                            checks.push({
-                                type: 'error_text',
-                                found: true,
-                                error: errorText
-                            });
-                            console.log('❌ 找到错误指示: ' + errorText);
-                            return {
-                                status: 'error',
-                                message: '检测到发布错误: ' + errorText,
-                                method: 'error_text'
-                            };
-                        }
-                    }
-                    checks.push({ type: 'error_text', found: false });
-                    
-                    console.log('❓ 所有检查完成，状态仍不明确');
                     return {
                         status: 'unknown',
-                        message: '完成所有检查，但状态仍不明确',
-                        method: 'comprehensive_check',
-                        checks: checks,
-                        currentUrl: currentUrl,
-                        bodyTextSample: bodyText.substring(0, 300)
+                        message: '无法确定发布状态'
                     };
                     
                 } catch (e) {
-                    console.error('❌ 增强状态检查异常:', e);
-                    return { 
-                        status: 'error', 
-                        message: '状态检查异常: ' + e.message,
-                        method: 'exception'
-                    };
+                    return { status: 'error', message: e.message };
                 }
             })()
-        `;
+        `
 
-        const result = await this.chromeController.executeScript(this.session, script);
-        const status = result.result?.value;
+        const result = await this.executeScript(script)
+        const status = result.result.value
 
-        if (!status) {
-            return { status: 'error', message: '增强状态检查脚本执行失败' };
-        }
-
-        console.log(`📊 增强状态检查结果: ${status.status} - ${status.message}`);
-
-        if (status.checks) {
-            console.log(`📋 检查详情:`);
-            status.checks.forEach((check, index) => {
-                console.log(`   ${index + 1}. ${check.type}: ${check.found ? '✅' : '❌'}`);
-            });
-        }
-
-        return status;
+        console.log(`   📊 发布状态: ${status.status} - ${status.message}`)
+        return status
     }
+
     // ==================== 工具方法 ====================
 
     getMimeType(filePath) {
