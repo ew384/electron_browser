@@ -241,6 +241,8 @@ export class HttpApiServer {
             let tabInfo;
             if (existingTab) {
                 console.log(`[HttpApiServer] ✅ 复用已有标签页: ${existingTab.id}`);
+                console.log(`[HttpApiServer] 🔄 激活复用的标签页: ${existingTab.id}`);
+                await this.activateExistingTab(port, existingTab.id);
                 tabInfo = existingTab;
             } else {
                 console.log(`[HttpApiServer] 🔧 创建新标签页: ${url}`);
@@ -471,6 +473,97 @@ export class HttpApiServer {
 
     // ==================== 保留原有方法 ====================
 
+    private async activateExistingTab(port: number, tabId: string): Promise<void> {
+        try {
+            console.log(`[HttpApiServer] 🎯 开始激活标签页 ${tabId}...`);
+
+            // 方法1: 使用Chrome DevTools Protocol激活标签页
+            await this.sendCDPCommand(port, '', 'Target.activateTarget', { targetId: tabId });
+            console.log(`[HttpApiServer] ✅ CDP激活命令已发送`);
+
+            // 等待激活生效
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // 方法2: 在标签页中执行激活脚本
+            const activateScript = `
+                (function() {
+                    try {
+                        console.log('🔄 执行标签页激活脚本...');
+                        
+                        // 强制聚焦窗口
+                        window.focus();
+                        
+                        // 聚焦文档
+                        if (document.body) {
+                            document.body.focus();
+                        }
+                        
+                        // 触发用户活动事件
+                        document.dispatchEvent(new Event('visibilitychange'));
+                        document.dispatchEvent(new Event('focus'));
+                        
+                        // 模拟用户交互（点击页面）
+                        if (document.body) {
+                            const clickEvent = new MouseEvent('click', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            });
+                            document.body.dispatchEvent(clickEvent);
+                        }
+                        
+                        // 检查激活状态
+                        const isActive = {
+                            hasFocus: document.hasFocus(),
+                            isVisible: !document.hidden,
+                            visibilityState: document.visibilityState,
+                            activeElement: document.activeElement ? document.activeElement.tagName : 'none'
+                        };
+                        
+                        console.log('📊 标签页激活状态:', isActive);
+                        
+                        return {
+                            success: true,
+                            activated: true,
+                            status: isActive
+                        };
+                    } catch (e) {
+                        console.error('❌ 标签页激活脚本异常:', e);
+                        return {
+                            success: false,
+                            error: e.message
+                        };
+                    }
+                })()
+            `;
+
+            // 执行激活脚本
+            const scriptResult = await this.sendCDPCommand(port, tabId, 'Runtime.evaluate', {
+                expression: activateScript,
+                returnByValue: true,
+                awaitPromise: false
+            });
+
+            if (scriptResult && scriptResult.result && scriptResult.result.value) {
+                const result = scriptResult.result.value;
+                if (result.success) {
+                    console.log(`[HttpApiServer] ✅ 标签页激活脚本执行成功`);
+                    console.log(`[HttpApiServer] 📊 激活状态:`, result.status);
+                } else {
+                    console.log(`[HttpApiServer] ⚠️ 标签页激活脚本执行失败: ${result.error}`);
+                }
+            }
+
+            // 再等待一下确保激活完全生效
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            console.log(`[HttpApiServer] ✅ 标签页 ${tabId} 激活流程完成`);
+
+        } catch (error) {
+            console.error(`[HttpApiServer] ❌ 激活标签页 ${tabId} 失败:`, error);
+            // 不抛出错误，让主流程继续
+        }
+    }
     // 🔧 保留：原有的执行脚本方法（兼容性）
     private async handleExecuteScript(req: http.IncomingMessage, res: http.ServerResponse, accountId: string): Promise<void> {
         try {

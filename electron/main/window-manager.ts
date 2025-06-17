@@ -100,7 +100,7 @@ export class WindowManager {
         accountId,
         windowId: chromeInfo.port, // 使用调试端口作为标识
         status: 'running',
-        url: config.startUrl || 'https://channels.weixin.qq.com/platform/post/create'
+        url: config.startUrl || 'chrome://newtab/'
       };
 
       this.instances.set(accountId, instance);
@@ -164,8 +164,10 @@ export class WindowManager {
       chromeArgs.push(`--lang=${fingerprintConfig.navigator.language}`);
     }
 
-    // 🔧 修改：默认打开微信视频号页面
-    const startUrl = config.startUrl || 'https://channels.weixin.qq.com/platform/post/create';
+    // 
+    //const startUrl = config.startUrl || 'https://channels.weixin.qq.com/platform/post/create';
+    // 默认打开新标签页页面：
+    const startUrl = config.startUrl || 'about:blank';
     chromeArgs.push(startUrl);
 
     // 查找Chrome可执行文件路径
