@@ -1,10 +1,5 @@
 <template>
   <div class="workflow-container">
-    <div class="workflow-header">
-      <h2>多平台发布工作流配置</h2>
-      <p>通过此界面配置视频自动化发布到微信视频号、抖音等平台的工作流</p>
-    </div>
-
     <!-- 使用包装器来更好地控制 iframe -->
     <div class="iframe-wrapper">
       <div class="iframe-container">
@@ -16,13 +11,11 @@
           @load="onIframeLoad"
         />
       </div>
-
       <!-- 加载状态 -->
       <div v-if="loading" class="loading-overlay">
         <i class="el-icon-loading"></i>
         <span>正在加载工作流配置界面...</span>
       </div>
-
       <!-- 错误状态 -->
       <div v-if="error" class="error-overlay">
         <i class="el-icon-warning"></i>
@@ -47,19 +40,15 @@ export default {
     setTimeout(() => {
       if (this.loading) {
         this.loading = false
-        this.error = 'RPA工作流服务可能未启动，请确保 http://localhost:3000 可访问'
+        this.error = 'RPA工作流服务可能未启动，请确保rap-platform可访问'
       }
     }, 5000)
-
-    // 页面挂载后调整iframe高度
     this.$nextTick(() => {
       this.fixIframeHeight()
     })
-
     // 监听窗口大小变化
     window.addEventListener('resize', this.fixIframeHeight)
   },
-
   beforeDestroy() {
     // 组件销毁前移除事件监听器
     window.removeEventListener('resize', this.fixIframeHeight)
@@ -69,13 +58,12 @@ export default {
     fixIframeHeight() {
       const wrapper = this.$el.querySelector('.iframe-wrapper')
       const container = this.$el.querySelector('.iframe-container')
-
       if (wrapper && container) {
         const wrapperHeight = wrapper.offsetHeight
         // 给iframe容器设置一个稍微大一点的高度，覆盖底部白边
         const extraHeight = 50 // 额外增加的高度，可以调整这个值
-        container.style.height = `${(wrapperHeight + extraHeight) / 0.85}px`
-        console.log('调整iframe高度:', wrapperHeight, '->', (wrapperHeight + extraHeight) / 0.85)
+        container.style.height = `${(wrapperHeight + extraHeight) / 0.82}px`
+        console.log('调整iframe高度:', wrapperHeight, '->', (wrapperHeight + extraHeight) / 0.82)
       }
     },
 
