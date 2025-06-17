@@ -1,14 +1,15 @@
 <template>
   <div class="workflow-container">
     <!-- 使用包装器来更好地控制 iframe -->
-    <div class="iframe-wrapper">
-      <div class="iframe-container">
+    <div ref="iframeWrapper" class="iframe-wrapper">
+      <div ref="iframeContainer" class="iframe-container">
         <iframe
           ref="workflowFrame"
           src="http://localhost:3000"
           frameborder="0"
-          scrolling="no"
+          :scrolling="allowScrolling ? 'yes' : 'auto'"
           @load="onIframeLoad"
+          @error="onIframeError"
         />
       </div>
       <!-- 加载状态 -->
@@ -23,6 +24,15 @@
         <el-button type="primary" size="small" @click="reloadIframe">重新加载</el-button>
       </div>
     </div>
+
+    <!-- 调试信息 (开发环境可见) -->
+    <div v-if="showDebugInfo" class="debug-info">
+      <p>容器高度: {{ containerHeight }}px</p>
+      <p>iframe高度: {{ iframeHeight }}px</p>
+      <p>内容高度: {{ contentHeight }}px</p>
+      <button @click="recalculateHeight">重新计算高度</button>
+      <button @click="toggleScrolling">切换滚动模式: {{ allowScrolling ? '启用' : '禁用' }}</button>
+    </div>
   </div>
 </template>
 
@@ -32,7 +42,14 @@ export default {
   data() {
     return {
       loading: true,
-      error: null
+      error: null,
+      allowScrolling: true, // 允许iframe滚动
+      containerHeight: 0,
+      iframeHeight: 0,
+      contentHeight: 0,
+      showDebugInfo: false, // 关闭调试信息显示
+      resizeObserver: null,
+      heightCheckInterval: null
     }
   },
   mounted() {
@@ -40,30 +57,141 @@ export default {
     setTimeout(() => {
       if (this.loading) {
         this.loading = false
-        this.error = 'RPA工作流服务可能未启动，请确保rap-platform可访问'
+        this.error = 'RPA工作流服务可能未启动，请确保rpa-platform可访问'
       }
     }, 5000)
+
     this.$nextTick(() => {
-      this.fixIframeHeight()
+      this.initializeIframe()
     })
+
     // 监听窗口大小变化
-    window.addEventListener('resize', this.fixIframeHeight)
+    window.addEventListener('resize', this.handleWindowResize)
+
+    // 使用ResizeObserver监听容器大小变化（更精确）
+    if (window.ResizeObserver) {
+      this.resizeObserver = new ResizeObserver(this.handleContainerResize)
+      this.resizeObserver.observe(this.$refs.iframeWrapper)
+    }
   },
+
   beforeDestroy() {
-    // 组件销毁前移除事件监听器
-    window.removeEventListener('resize', this.fixIframeHeight)
+    // 清理事件监听器和定时器
+    window.removeEventListener('resize', this.handleWindowResize)
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect()
+    }
+    if (this.heightCheckInterval) {
+      clearInterval(this.heightCheckInterval)
+    }
   },
 
   methods: {
-    fixIframeHeight() {
-      const wrapper = this.$el.querySelector('.iframe-wrapper')
-      const container = this.$el.querySelector('.iframe-container')
-      if (wrapper && container) {
-        const wrapperHeight = wrapper.offsetHeight
-        // 给iframe容器设置一个稍微大一点的高度，覆盖底部白边
-        const extraHeight = 50 // 额外增加的高度，可以调整这个值
-        container.style.height = `${(wrapperHeight + extraHeight) / 0.82}px`
-        console.log('调整iframe高度:', wrapperHeight, '->', (wrapperHeight + extraHeight) / 0.82)
+    initializeIframe() {
+      this.calculateContainerHeight()
+      this.setIframeHeight()
+
+      // 定期检查内容高度变化
+      this.heightCheckInterval = setInterval(() => {
+        this.checkContentHeight()
+      }, 2000)
+    },
+
+    calculateContainerHeight() {
+      const wrapper = this.$refs.iframeWrapper
+      if (wrapper) {
+        const rect = wrapper.getBoundingClientRect()
+        this.containerHeight = rect.height
+        console.log('容器高度:', this.containerHeight)
+      }
+    },
+
+    setIframeHeight() {
+      const container = this.$refs.iframeContainer
+      const iframe = this.$refs.workflowFrame
+
+      if (container && this.containerHeight > 0) {
+        // 由于使用了 scale(0.85)，需要相应调整容器高度
+        const scale = 0.85
+        const calculatedHeight = Math.max(this.containerHeight / scale, 1400) // 最小1400px
+        container.style.height = `${calculatedHeight}px`
+        container.style.width = `${100 / scale}%` // 调整宽度以适应缩放
+        this.iframeHeight = calculatedHeight
+
+        if (iframe) {
+          iframe.style.height = `${calculatedHeight}px`
+        }
+
+        console.log('设置iframe高度 (缩放后):', calculatedHeight)
+      }
+    },
+
+    async checkContentHeight() {
+      const iframe = this.$refs.workflowFrame
+      if (!iframe || !iframe.contentWindow) return
+
+      try {
+        // 尝试获取iframe内容的实际高度
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
+        if (iframeDoc) {
+          const body = iframeDoc.body
+          const html = iframeDoc.documentElement
+
+          const contentHeight = Math.max(
+            body?.scrollHeight || 0,
+            body?.offsetHeight || 0,
+            html?.clientHeight || 0,
+            html?.scrollHeight || 0,
+            html?.offsetHeight || 0
+          )
+
+          if (contentHeight > 0 && contentHeight !== this.contentHeight) {
+            this.contentHeight = contentHeight
+            console.log('检测到内容高度变化:', contentHeight)
+
+            // 根据内容高度调整iframe高度
+            if (contentHeight > this.iframeHeight) {
+              this.adjustIframeHeight(contentHeight)
+            }
+          }
+        }
+      } catch (error) {
+        // 跨域限制，无法访问iframe内容
+        console.log('无法访问iframe内容（跨域限制）')
+      }
+    },
+
+    adjustIframeHeight(targetHeight) {
+      const container = this.$refs.iframeContainer
+      const iframe = this.$refs.workflowFrame
+
+      if (container && iframe) {
+        const scale = 0.85
+        const newHeight = Math.max((targetHeight + 100) / scale, this.containerHeight / scale)
+        container.style.height = `${newHeight}px`
+        iframe.style.height = `${newHeight}px`
+        this.iframeHeight = newHeight
+
+        console.log('调整iframe高度至 (缩放后):', newHeight)
+      }
+    },
+
+    handleWindowResize() {
+      // 防抖处理
+      clearTimeout(this.resizeTimer)
+      this.resizeTimer = setTimeout(() => {
+        this.calculateContainerHeight()
+        this.setIframeHeight()
+      }, 300)
+    },
+
+    handleContainerResize(entries) {
+      for (const entry of entries) {
+        const { height } = entry.contentRect
+        if (height !== this.containerHeight) {
+          this.containerHeight = height
+          this.setIframeHeight()
+        }
       }
     },
 
@@ -72,22 +200,56 @@ export default {
       this.error = null
       console.log('工作流配置界面加载完成')
 
-      // iframe加载完成后再次调整高度
+      // iframe加载完成后调整高度
       setTimeout(() => {
-        this.fixIframeHeight()
-      }, 200)
+        this.setIframeHeight()
+        this.checkContentHeight()
+      }, 500)
+
+      // 监听iframe内部的消息（如果RPA平台支持）
+      this.setupMessageListener()
+    },
+
+    onIframeError() {
+      this.loading = false
+      this.error = '无法加载工作流配置界面'
+    },
+
+    setupMessageListener() {
+      // 监听来自iframe的消息
+      window.addEventListener('message', event => {
+        if (event.origin !== 'http://localhost:3000') return
+
+        // 处理高度调整消息
+        if (event.data.type === 'resize') {
+          const { height } = event.data
+          if (height) {
+            this.adjustIframeHeight(height)
+          }
+        }
+      })
     },
 
     reloadIframe() {
       this.loading = true
       this.error = null
-      // 修复 ESLint 错误：通过重新设置URL来重新加载
       const iframe = this.$refs.workflowFrame
       const currentSrc = iframe.src
       iframe.src = ''
       this.$nextTick(() => {
         iframe.src = currentSrc
       })
+    },
+
+    // 调试方法
+    recalculateHeight() {
+      this.calculateContainerHeight()
+      this.setIframeHeight()
+      this.checkContentHeight()
+    },
+
+    toggleScrolling() {
+      this.allowScrolling = !this.allowScrolling
     }
   }
 }
@@ -103,25 +265,7 @@ export default {
   display: flex;
   flex-direction: column;
   background: #f5f5f5;
-}
-
-.workflow-header {
-  padding: 20px;
-  background: white;
-  border-bottom: 1px solid #e6e6e6;
-  flex-shrink: 0;
-}
-
-.workflow-header h2 {
-  margin: 0 0 8px 0;
-  color: #303133;
-  font-size: 18px;
-}
-
-.workflow-header p {
-  margin: 0;
-  color: #606266;
-  font-size: 14px;
+  overflow: hidden; /* 防止容器本身滚动 */
 }
 
 .iframe-wrapper {
@@ -129,16 +273,14 @@ export default {
   position: relative;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: auto; /* 允许包装器滚动 */
   background: white;
 }
 
 .iframe-container {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: relative;
   width: 100%;
-  height: 100%;
+  min-height: 100%;
 }
 
 .iframe-container iframe {
@@ -148,7 +290,8 @@ export default {
   margin: 0;
   padding: 0;
   display: block;
-  zoom: 0.85;
+  transform: scale(0.85);
+  transform-origin: top left;
 }
 
 .loading-overlay,
@@ -182,5 +325,42 @@ export default {
 .error-overlay span {
   color: #606266;
   margin-bottom: 12px;
+}
+
+/* 调试信息样式 */
+.debug-info {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  z-index: 1000;
+}
+
+.debug-info button {
+  margin: 2px;
+  padding: 2px 5px;
+  font-size: 10px;
+}
+
+/* 确保iframe可以正常滚动 */
+.iframe-wrapper::-webkit-scrollbar {
+  width: 8px;
+}
+
+.iframe-wrapper::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.iframe-wrapper::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.iframe-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 </style>
