@@ -3,6 +3,9 @@ export default {
     dashboard: 'Dashboard',
     browser: 'Browser',
     agent_chat: 'Agent Chat',
+    // 在 route 对象中添加
+    ai_tools: 'AI Tools',
+    ai_tools_platform: 'AI Tools Platform',
     extensions: 'Extensions',
     browser_list: 'List',
     group: 'Group',

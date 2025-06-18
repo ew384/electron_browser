@@ -5,6 +5,9 @@ export default {
     browser_list: '列表',
     group: '分组管理',
     agent_chat: '智能体对话',
+    // 在 route 对象中添加
+    ai_tools: 'AI工具平台',
+    ai_tools_platform: 'AI工具平台',
     extensions: '插件',
     crx_store: '插件市场',
     crx_upload: '插件上传',

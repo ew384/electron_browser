@@ -116,6 +116,20 @@ export const constantRoutes = [
     ]
   },
   {
+    path: '/ai-tools',
+    component: Layout,
+    redirect: '/ai-tools/platform',
+    meta: { title: 'ai_tools', icon: 'el-icon-cpu' },
+    children: [
+      {
+        path: 'platform',
+        component: require('@/views/ai-tools/index').default,
+        name: 'AiToolsPlatform',
+        meta: { title: 'ai_tools_platform', icon: 'el-icon-cpu', affix: true }
+      }
+    ]
+  },
+  {
     path: '/workflow',
     component: Layout,
     redirect: '/workflow/config',

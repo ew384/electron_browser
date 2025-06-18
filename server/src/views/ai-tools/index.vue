@@ -1,11 +1,11 @@
 <template>
-  <div class="workflow-container">
+  <div class="ai-tools-container">
     <!-- 使用包装器来更好地控制 iframe -->
     <div ref="iframeWrapper" class="iframe-wrapper">
       <div ref="iframeContainer" class="iframe-container">
         <iframe
-          ref="workflowFrame"
-          src="http://localhost:3000"
+          ref="aiToolsFrame"
+          src="http://localhost:3002"
           frameborder="0"
           :scrolling="allowScrolling ? 'yes' : 'auto'"
           @load="onIframeLoad"
@@ -15,7 +15,7 @@
       <!-- 加载状态 -->
       <div v-if="loading" class="loading-overlay">
         <i class="el-icon-loading"></i>
-        <span>正在加载工作流配置界面...</span>
+        <span>正在加载AI工具平台...</span>
       </div>
       <!-- 错误状态 -->
       <div v-if="error" class="error-overlay">
@@ -38,16 +38,16 @@
 
 <script>
 export default {
-  name: 'WorkflowConfig',
+  name: 'AiToolsConfig',
   data() {
     return {
       loading: true,
       error: null,
-      allowScrolling: false, // 🔥 改为 false，禁用iframe滚动
+      allowScrolling: true, // 允许iframe滚动
       containerHeight: 0,
       iframeHeight: 0,
       contentHeight: 0,
-      showDebugInfo: false,
+      showDebugInfo: false, // 关闭调试信息显示
       resizeObserver: null,
       heightCheckInterval: null
     }
@@ -57,7 +57,7 @@ export default {
     setTimeout(() => {
       if (this.loading) {
         this.loading = false
-        this.error = 'RPA工作流服务可能未启动，请确保rpa-platform可访问'
+        this.error = 'AI工具平台服务可能未启动，请确保localhost:3002可访问'
       }
     }, 5000)
 
@@ -102,13 +102,13 @@ export default {
       if (wrapper) {
         const rect = wrapper.getBoundingClientRect()
         this.containerHeight = rect.height
-        console.log('容器高度:', this.containerHeight)
+        console.log('AI工具平台容器高度:', this.containerHeight)
       }
     },
 
     setIframeHeight() {
       const container = this.$refs.iframeContainer
-      const iframe = this.$refs.workflowFrame
+      const iframe = this.$refs.aiToolsFrame
 
       if (container && iframe) {
         // 让iframe占满容器，高度由CSS控制
@@ -117,12 +117,12 @@ export default {
         iframe.style.height = '100%'
         iframe.style.width = '100%'
 
-        console.log('iframe设置完成')
+        console.log('AI工具平台iframe设置完成')
       }
     },
 
     async checkContentHeight() {
-      const iframe = this.$refs.workflowFrame
+      const iframe = this.$refs.aiToolsFrame
       if (!iframe || !iframe.contentWindow) return
 
       try {
@@ -142,12 +142,32 @@ export default {
 
           if (contentHeight > 0 && contentHeight !== this.contentHeight) {
             this.contentHeight = contentHeight
-            console.log('检测到内容高度变化:', contentHeight)
+            console.log('检测到AI工具平台内容高度变化:', contentHeight)
+
+            // 根据内容高度调整iframe高度
+            if (contentHeight > this.iframeHeight) {
+              this.adjustIframeHeight(contentHeight)
+            }
           }
         }
       } catch (error) {
         // 跨域限制，无法访问iframe内容
         console.log('无法访问iframe内容（跨域限制）')
+      }
+    },
+
+    adjustIframeHeight(targetHeight) {
+      const container = this.$refs.iframeContainer
+      const iframe = this.$refs.aiToolsFrame
+
+      if (container && iframe) {
+        const scale = 0.85
+        const newHeight = Math.max((targetHeight + 100) / scale, this.containerHeight / scale)
+        container.style.height = `${newHeight}px`
+        iframe.style.height = `${newHeight}px`
+        this.iframeHeight = newHeight
+
+        console.log('调整AI工具平台iframe高度至 (缩放后):', newHeight)
       }
     },
 
@@ -173,89 +193,33 @@ export default {
     onIframeLoad() {
       this.loading = false
       this.error = null
-      console.log('工作流配置界面加载完成')
+      console.log('AI工具平台加载完成')
 
-      // iframe加载完成后进行样式修复
+      // iframe加载完成后调整高度
       setTimeout(() => {
-        this.fixIframeLayout()
         this.setIframeHeight()
         this.checkContentHeight()
       }, 500)
 
-      // 监听iframe内部的消息
+      // 监听iframe内部的消息（如果AI工具平台支持）
       this.setupMessageListener()
-    },
-
-    // 🔥 新增：修复iframe布局的方法
-    fixIframeLayout() {
-      const iframe = this.$refs.workflowFrame
-      if (!iframe || !iframe.contentWindow) return
-
-      try {
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
-        if (iframeDoc) {
-          // 检查是否已经注入过样式
-          if (!iframeDoc.getElementById('rpa-layout-fix')) {
-            const style = iframeDoc.createElement('style')
-            style.id = 'rpa-layout-fix'
-            style.textContent = `
-              /* 确保RPA平台的布局在iframe中正确显示 */
-              body {
-                margin: 0 !important;
-                padding: 0 !important;
-                overflow: hidden !important;
-              }
-              
-              /* 确保主容器占满iframe */
-              .h-screen {
-                height: 100vh !important;
-                min-height: 100vh !important;
-              }
-              
-              /* 确保顶部导航固定 */
-              header {
-                position: sticky !important;
-                top: 0 !important;
-                z-index: 1000 !important;
-                background: white !important;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
-              }
-              
-              /* 确保主内容区域可以滚动 */
-              main {
-                overflow-y: auto !important;
-                height: calc(100vh - 64px) !important; /* 减去header高度 */
-              }
-              
-              /* 禁用整体页面滚动 */
-              html, body {
-                overflow: hidden !important;
-              }
-            `
-            iframeDoc.head.appendChild(style)
-            console.log('✅ RPA布局修复样式已注入')
-          }
-        }
-      } catch (error) {
-        console.log('❌ 无法注入布局修复样式（跨域限制）:', error)
-      }
     },
 
     onIframeError() {
       this.loading = false
-      this.error = '无法加载工作流配置界面'
+      this.error = '无法加载AI工具平台'
     },
 
     setupMessageListener() {
       // 监听来自iframe的消息
       window.addEventListener('message', event => {
-        if (event.origin !== 'http://localhost:3000') return
+        if (event.origin !== 'http://localhost:3002') return
 
         // 处理高度调整消息
         if (event.data.type === 'resize') {
           const { height } = event.data
           if (height) {
-            console.log('收到iframe高度调整消息:', height)
+            this.adjustIframeHeight(height)
           }
         }
       })
@@ -264,7 +228,7 @@ export default {
     reloadIframe() {
       this.loading = true
       this.error = null
-      const iframe = this.$refs.workflowFrame
+      const iframe = this.$refs.aiToolsFrame
       const currentSrc = iframe.src
       iframe.src = ''
       this.$nextTick(() => {
@@ -287,7 +251,7 @@ export default {
 </script>
 
 <style scoped>
-.workflow-container {
+.ai-tools-container {
   position: absolute;
   top: 0;
   left: 0;
@@ -297,7 +261,6 @@ export default {
   flex-direction: column;
   background: #f5f5f5;
   overflow: hidden;
-  /* 🔥 确保外层不滚动 */
 }
 
 .iframe-wrapper {
@@ -306,7 +269,7 @@ export default {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  /* 🔥 禁止wrapper滚动 */
+  /* 改为hidden，让iframe自己处理滚动 */
   background: white;
 }
 
@@ -327,7 +290,6 @@ export default {
   margin: 0;
   padding: 0;
   display: block;
-  /* 🔥 让iframe内部处理滚动 */
 }
 
 .loading-overlay,
@@ -380,5 +342,23 @@ export default {
   margin: 2px;
   padding: 2px 5px;
   font-size: 10px;
+}
+
+/* 确保iframe可以正常滚动 */
+.iframe-wrapper::-webkit-scrollbar {
+  width: 8px;
+}
+
+.iframe-wrapper::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.iframe-wrapper::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.iframe-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 </style>
