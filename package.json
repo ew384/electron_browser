@@ -1,5 +1,5 @@
 {
-  "name": "virtual-browser",
+  "name": "browser-agent",
   "version": "1.0.0",
   "description": "Anti-fingerprint browser with Vue frontend and Electron backend",
   "main": "dist/electron/main/index.js",
@@ -43,8 +43,8 @@
     "zustand": "^5.0.5"
   },
   "build": {
-    "appId": "com.yourcompany.virtualbrowser",
-    "productName": "Virtual Browser",
+    "appId": "com.yourcompany",
+    "productName": "Browser Agent",
     "directories": {
       "output": "dist/app"
     },

@@ -18,48 +18,128 @@ export class WindowManager {
 
   // 存储每个窗口的指纹配置，供 preload 脚本查询
   private static windowFingerprintMap = new Map<number, FingerprintConfig>();
-
   // 🔧 修改：从9711开始分配端口
   private static BASE_DEBUG_PORT = 9711;
   private static instanceCounter = 0;
+  private async fetchWithTimeout(url: string, timeoutMs: number = 5000): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  // 🔧 新增：检查端口是否可用
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; WindowManager/1.0)'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      
+      if (error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeoutMs}ms`);
+      }
+      throw error;
+    }
+  }
   private async isPortAvailable(port: number): Promise<boolean> {
-    return new Promise((resolve) => {
+    const checkIPv4 = () => new Promise<boolean>((resolve) => {
       const server = net.createServer();
-
-      server.listen(port, 'localhost', () => {
+      
+      server.listen(port, '127.0.0.1', () => {
         server.close(() => {
-          console.log(`[WindowManager] 端口 ${port} 可用`);
+          console.log(`[WindowManager] IPv4 端口 ${port} 可用`);
           resolve(true);
         });
       });
 
       server.on('error', (err: any) => {
         if (err.code === 'EADDRINUSE') {
-          console.log(`[WindowManager] 端口 ${port} 已被占用`);
+          console.log(`[WindowManager] IPv4 端口 ${port} 已被占用`);
           resolve(false);
         } else {
-          console.log(`[WindowManager] 端口 ${port} 检查失败:`, err.message);
+          console.log(`[WindowManager] IPv4 端口 ${port} 检查失败:`, err.message);
           resolve(false);
         }
       });
     });
-  }
 
+    const checkIPv6 = () => new Promise<boolean>((resolve) => {
+      const server = net.createServer();
+      
+      server.listen(port, '::1', () => {
+        server.close(() => {
+          console.log(`[WindowManager] IPv6 端口 ${port} 可用`);
+          resolve(true);
+        });
+      });
+
+      server.on('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          console.log(`[WindowManager] IPv6 端口 ${port} 已被占用`);
+          resolve(false);
+        } else {
+          console.log(`[WindowManager] IPv6 端口 ${port} 检查失败:`, err.message);
+          resolve(false);
+        }
+      });
+    });
+
+    const [ipv4Available, ipv6Available] = await Promise.all([
+      checkIPv4(),
+      checkIPv6()
+    ]);
+
+    const isAvailable = ipv4Available && ipv6Available;
+    console.log(`[WindowManager] 端口 ${port} 检查结果: IPv4=${ipv4Available}, IPv6=${ipv6Available}, 总体=${isAvailable}`);
+    
+    return isAvailable;
+  }
+    private async isPortUsedByChrome(port: number): Promise<boolean> {
+    try {
+      const response = await this.fetchWithTimeout(`http://localhost:${port}/json/version`, 2000);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`[WindowManager] 端口 ${port} 已被Chrome占用:`, data.Browser);
+        return true;
+      }
+    } catch (error: any) {
+      // 连接失败说明没有Chrome在这个端口
+      if (error.message.includes('timeout')) {
+        console.log(`[WindowManager] 端口 ${port} 检查超时`);
+      }
+    }
+    
+    return false;
+  }
   // 🔧 新增：找到可用的调试端口
-  private async findAvailableDebugPort(): Promise<number> {
-    const maxAttempts = 100; // 最多尝试100个端口
+    private async findAvailableDebugPort(): Promise<number> {
+    const maxAttempts = 100;
 
     for (let i = 0; i < maxAttempts; i++) {
       const port = WindowManager.BASE_DEBUG_PORT + i;
 
-      console.log(`[WindowManager] 检查端口 ${port} 是否可用...`);
+      console.log(`[WindowManager] 检查端口 ${port}...`);
 
-      if (await this.isPortAvailable(port)) {
+      // 1. 先检查是否被Chrome占用
+      const usedByChrome = await this.isPortUsedByChrome(port);
+      if (usedByChrome) {
+        console.log(`[WindowManager] ⚠️ 端口 ${port} 已被其他Chrome实例占用，跳过`);
+        continue;
+      }
+
+      // 2. 检查端口是否可用（IPv4 + IPv6）
+      const isAvailable = await this.isPortAvailable(port);
+      if (isAvailable) {
         console.log(`[WindowManager] ✅ 找到可用端口: ${port}`);
         return port;
       }
+
+      console.log(`[WindowManager] ❌ 端口 ${port} 不可用，尝试下一个`);
     }
 
     throw new Error(`无法在 ${WindowManager.BASE_DEBUG_PORT}-${WindowManager.BASE_DEBUG_PORT + maxAttempts} 范围内找到可用端口`);
@@ -69,14 +149,12 @@ export class WindowManager {
     try {
       console.log(`[WindowManager] Creating Chrome browser instance for account: ${accountId}`);
 
-      // 检查是否已存在实例
       const existingInstance = this.instances.get(accountId);
       if (existingInstance) {
         console.log(`[WindowManager] Instance already exists for account ${accountId}`);
         return existingInstance;
       }
 
-      // 🎯 复用现有的指纹生成器
       const fingerprintConfig = FingerprintGenerator.generateFingerprint(accountId);
       this.fingerprintConfigs.set(accountId, fingerprintConfig);
 
@@ -87,34 +165,31 @@ export class WindowManager {
         canvasNoise: fingerprintConfig.canvas.noise
       });
 
-      // 🎯 复用现有的指纹验证器
       const quality = FingerprintValidator.validateFingerprint(fingerprintConfig);
       if (quality.score < 70) {
         console.warn(`[WindowManager] Low fingerprint quality for account ${accountId}:`, quality.issues);
       }
 
-      // 启动真实的Chrome浏览器
       const chromeInfo = await this.launchRealChrome(accountId, fingerprintConfig, config);
 
       const instance: BrowserInstance = {
         accountId,
-        windowId: chromeInfo.port, // 使用调试端口作为标识
+        windowId: chromeInfo.port,
         status: 'running',
         url: config.startUrl || 'chrome://newtab/'
       };
 
       this.instances.set(accountId, instance);
       this.chromeProcesses.set(accountId, chromeInfo.process);
-      this.chromeDebugPorts.set(accountId, chromeInfo.port); // 存储调试端口
+      this.chromeDebugPorts.set(accountId, chromeInfo.port);
 
       console.log(`[WindowManager] ✅ Chrome browser launched successfully for account ${accountId}, debug port: ${chromeInfo.port}`);
 
-      // 监听Chrome进程退出
       chromeInfo.process.on('exit', (code) => {
         console.log(`[WindowManager] Chrome process exited for account ${accountId} with code:`, code);
         this.instances.delete(accountId);
         this.chromeProcesses.delete(accountId);
-        this.chromeDebugPorts.delete(accountId); // 清理调试端口
+        this.chromeDebugPorts.delete(accountId);
       });
 
       return instance;
@@ -127,84 +202,135 @@ export class WindowManager {
 
   private async launchRealChrome(accountId: string, fingerprintConfig: FingerprintConfig, config: AccountConfig) {
     const userDataDir = path.join(os.tmpdir(), 'chrome-profiles', accountId);
-
-    // 🔧 修改：使用动态端口分配
     const debugPort = await this.findAvailableDebugPort();
-    WindowManager.instanceCounter++;
-
-    // 确保用户数据目录存在
+    
     if (!fs.existsSync(userDataDir)) {
       fs.mkdirSync(userDataDir, { recursive: true });
     }
 
-    // 🎯 简化的指纹注入脚本生成（移除重复的指纹逻辑）
     const injectionScript = this.generateSimpleInjectionScript(fingerprintConfig, accountId);
     const scriptPath = path.join(userDataDir, 'fingerprint-injection.js');
     fs.writeFileSync(scriptPath, injectionScript);
 
-    // 构建Chrome启动参数
     const chromeArgs = [
       `--user-data-dir=${userDataDir}`,
       `--remote-debugging-port=${debugPort}`,
+      '--remote-debugging-address=127.0.0.1',
       '--no-first-run',
-      '--no-default-browser-check',
+      //'--no-default-browser-check',
       '--disable-features=VizDisplayCompositor',
       '--disable-dev-shm-usage',
+      //'--disable-web-security',
+      //'--disable-features=Translate',
+      //'--no-sandbox',
       `--window-size=${fingerprintConfig.screen.width},${fingerprintConfig.screen.height}`,
       `--user-agent=${this.generateUserAgent(fingerprintConfig)}`,
     ];
 
-    // 添加代理设置
     if (config.proxy) {
       chromeArgs.push(`--proxy-server=${config.proxy}`);
     }
 
-    // 添加语言设置
     if (fingerprintConfig.navigator.language) {
       chromeArgs.push(`--lang=${fingerprintConfig.navigator.language}`);
     }
 
-    // 
-    //const startUrl = config.startUrl || 'https://channels.weixin.qq.com/platform/post/create';
-    // 默认打开新标签页页面：
     const startUrl = config.startUrl || 'about:blank';
     chromeArgs.push(startUrl);
 
-    // 查找Chrome可执行文件路径
     const chromePath = this.findChromePath();
 
-    console.log(`[WindowManager] Launching Chrome with debug port ${debugPort}`);
-    console.log(`[WindowManager] Starting URL: ${startUrl}`);
-    console.log(`[WindowManager] Chrome args:`, chromeArgs.slice(0, 5), '...');
+    console.log(`[WindowManager] 🚀 启动Chrome - 账号: ${accountId}, 端口: ${debugPort}`);
+    console.log(`[WindowManager] 🔗 启动URL: ${startUrl}`);
+    console.log(`[WindowManager] ⚙️ 关键参数: --remote-debugging-port=${debugPort} --remote-debugging-address=127.0.0.1`);
 
-    // 启动Chrome进程
     const chromeProcess = spawn(chromePath, chromeArgs, {
       detached: false,
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    // 监听进程输出（用于调试）
     chromeProcess.stdout?.on('data', (data) => {
-      const output = data.toString();
-      if (output.includes('DevTools listening')) {
-        console.log(`[Chrome-${accountId}] ${output.trim()}`);
+      const output = data.toString().trim();
+      if (output.includes('DevTools listening') || output.includes('started')) {
+        console.log(`[Chrome-${accountId}-${debugPort}] ${output}`);
       }
     });
 
     chromeProcess.stderr?.on('data', (data) => {
-      const output = data.toString();
-      if (output.includes('DevTools listening') || output.includes('Chrome started')) {
-        console.log(`[Chrome-${accountId}] ${output.trim()}`);
+      const output = data.toString().trim();
+      if (output.includes('DevTools') || output.includes('listening') || output.includes('bind')) {
+        console.log(`[Chrome-${accountId}-${debugPort}] STDERR: ${output}`);
       }
     });
 
-    // 等待Chrome启动
-    await this.waitForChromeReady(debugPort);
+    chromeProcess.on('error', (error) => {
+      console.error(`[WindowManager] Chrome进程启动失败 - 账号: ${accountId}, 端口: ${debugPort}`, error);
+    });
+
+    await this.waitForChromeReady(debugPort, accountId);
 
     return {
       process: chromeProcess,
       port: debugPort
     };
+  }
+
+  // 🔧 修复：Chrome就绪检测，使用新的 fetch 方法
+  private async waitForChromeReady(port: number, accountId: string, timeout = 20000): Promise<void> {
+    const startTime = Date.now();
+    let lastError = '';
+
+    console.log(`[WindowManager] 等待Chrome就绪 - 账号: ${accountId}, 端口: ${port}`);
+
+    while (Date.now() - startTime < timeout) {
+      try {
+        const response = await this.fetchWithTimeout(`http://127.0.0.1:${port}/json/version`, 3000);
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`[WindowManager] ✅ Chrome就绪 - 账号: ${accountId}, 端口: ${port}, 版本: ${data.Browser}`);
+          
+          // 验证调试端口独占性
+          try {
+            const pagesResponse = await this.fetchWithTimeout(`http://127.0.0.1:${port}/json`, 3000);
+            if (pagesResponse.ok) {
+              const pagesData = await pagesResponse.json();
+              console.log(`[WindowManager] 📄 活动页面数: ${pagesData.length}`);
+            }
+          } catch (error) {
+            console.warn(`[WindowManager] 获取页面信息失败:`, error);
+          }
+          
+          return;
+        } else {
+          lastError = `HTTP ${response.status}`;
+        }
+      } catch (error: any) {
+        lastError = error.message;
+        
+        if (error.message.includes('ECONNREFUSED')) {
+          // Chrome还在启动，继续等待
+        } else if (error.message.includes('timeout')) {
+          console.warn(`[WindowManager] Chrome连接超时 - 账号: ${accountId}, 端口: ${port}`);
+        } else {
+          console.warn(`[WindowManager] Chrome连接异常 - 账号: ${accountId}, 端口: ${port}:`, error.message);
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    console.error(`[WindowManager] ❌ Chrome启动超时 - 账号: ${accountId}, 端口: ${port}`);
+    console.error(`[WindowManager] 最后错误: ${lastError}`);
+    
+    try {
+      const isUsed = await this.isPortUsedByChrome(port);
+      console.error(`[WindowManager] 端口 ${port} Chrome状态: ${isUsed ? '被占用' : '未被占用'}`);
+    } catch (error) {
+      console.error(`[WindowManager] 无法检查端口状态:`, error);
+    }
+
+    throw new Error(`Chrome failed to start for account ${accountId} on port ${port} within ${timeout}ms. Last error: ${lastError}`);
   }
 
   private findChromePath(): string {
@@ -236,26 +362,6 @@ export class WindowManager {
     }
 
     throw new Error(`Chrome not found on ${platform}. Please install Google Chrome.`);
-  }
-
-  private async waitForChromeReady(port: number, timeout = 15000): Promise<void> {
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeout) {
-      try {
-        const response = await fetch(`http://localhost:${port}/json/version`);
-        if (response.ok) {
-          console.log(`[WindowManager] Chrome is ready on port ${port}`);
-          return;
-        }
-      } catch (error) {
-        // Chrome还没准备好，继续等待
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    throw new Error(`Chrome failed to start on port ${port} within ${timeout}ms`);
   }
 
   // 🎯 简化的注入脚本生成（不重复实现指纹逻辑，只传递配置）
