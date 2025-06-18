@@ -110,19 +110,14 @@ export default {
       const container = this.$refs.iframeContainer
       const iframe = this.$refs.workflowFrame
 
-      if (container && this.containerHeight > 0) {
-        // 由于使用了 scale(0.85)，需要相应调整容器高度
-        const scale = 0.85
-        const calculatedHeight = Math.max(this.containerHeight / scale, 1400) // 最小1400px
-        container.style.height = `${calculatedHeight}px`
-        container.style.width = `${100 / scale}%` // 调整宽度以适应缩放
-        this.iframeHeight = calculatedHeight
+      if (container && iframe) {
+        // 让iframe占满容器，高度由CSS控制
+        container.style.height = '100%'
+        container.style.width = '100%'
+        iframe.style.height = '100%'
+        iframe.style.width = '100%'
 
-        if (iframe) {
-          iframe.style.height = `${calculatedHeight}px`
-        }
-
-        console.log('设置iframe高度 (缩放后):', calculatedHeight)
+        console.log('iframe设置完成')
       }
     },
 
@@ -265,7 +260,7 @@ export default {
   display: flex;
   flex-direction: column;
   background: #f5f5f5;
-  overflow: hidden; /* 防止容器本身滚动 */
+  overflow: hidden;
 }
 
 .iframe-wrapper {
@@ -273,14 +268,19 @@ export default {
   position: relative;
   margin: 0;
   padding: 0;
-  overflow: auto; /* 允许包装器滚动 */
+  overflow: hidden;
+  /* 改为hidden，让iframe自己处理滚动 */
   background: white;
 }
 
 .iframe-container {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
-  min-height: 100%;
+  height: 100%;
 }
 
 .iframe-container iframe {
@@ -290,8 +290,6 @@ export default {
   margin: 0;
   padding: 0;
   display: block;
-  transform: scale(0.85);
-  transform-origin: top left;
 }
 
 .loading-overlay,
