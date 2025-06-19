@@ -1,5 +1,5 @@
 module.exports = {
-  title: 'Virtual Browser',
+  title: 'Browser Agent',
 
   /**
    * @type {boolean} true | false

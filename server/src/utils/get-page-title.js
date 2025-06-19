@@ -1,7 +1,7 @@
 import defaultSettings from '@/settings'
 import i18n from '@/lang'
 
-const title = defaultSettings.title || 'Virtual Browser'
+const title = defaultSettings.title || 'Browser Agent'
 
 export default function getPageTitle(key) {
   const hasKey = i18n.te(`route.${key}`)

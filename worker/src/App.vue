@@ -2,7 +2,7 @@
   <section class="container">
     <header>
       <img src="./assets/96.png" />
-      <h1>Virtual Browser</h1>
+      <h1>Browser Agent</h1>
     </header>
     <main>
       <div class="geo" v-show="geo.ip">
