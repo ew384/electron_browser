@@ -3,7 +3,7 @@ import express from 'express'
 
 export class AutomationServer {
     constructor(options = {}) {
-        this.port = options.port || 3001
+        this.port = options.port || 3211
         this.app = express()
         this.setupRoutes()
     }

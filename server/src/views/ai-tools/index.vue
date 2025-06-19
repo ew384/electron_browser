@@ -5,7 +5,7 @@
       <div ref="iframeContainer" class="iframe-container">
         <iframe
           ref="aiToolsFrame"
-          src="http://localhost:3002"
+          src="http://localhost:9001"
           frameborder="0"
           :scrolling="allowScrolling ? 'yes' : 'auto'"
           @load="onIframeLoad"
@@ -57,7 +57,7 @@ export default {
     setTimeout(() => {
       if (this.loading) {
         this.loading = false
-        this.error = 'AI工具平台服务可能未启动，请确保localhost:3002可访问'
+        this.error = 'AI工具平台服务可能未启动，请确保localhost:9001可访问'
       }
     }, 5000)
 
@@ -213,7 +213,7 @@ export default {
     setupMessageListener() {
       // 监听来自iframe的消息
       window.addEventListener('message', event => {
-        if (event.origin !== 'http://localhost:3002') return
+        if (event.origin !== 'http://localhost:9001') return
 
         // 处理高度调整消息
         if (event.data.type === 'resize') {

@@ -41,7 +41,7 @@ node cli/automation-cli.js init --type video
 node cli/automation-cli.js test
 
 # 启动API服务器
-node cli/automation-cli.js server --port 3001
+node cli/automation-cli.js server --port 3211
 ```
 
 ## 📞 技术支持
