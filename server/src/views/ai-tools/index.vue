@@ -43,6 +43,7 @@ export default {
     return {
       loading: true,
       error: null,
+      urlDetected: false,
       allowScrolling: true, // 允许iframe滚动
       containerHeight: 0,
       iframeHeight: 0,
@@ -53,37 +54,22 @@ export default {
     }
   },
   computed: {
-    // 判断是否为开发环境
-    isDevelopment() {
-      return (
-        process.env.NODE_ENV === 'development' ||
-        location.hostname === 'localhost' ||
-        location.hostname === '127.0.0.1'
-      )
-    },
-
-    // 根据环境自动切换URL
     aiToolsUrl() {
-      return this.isDevelopment ? 'http://localhost:9001' : 'https://aitools.181901.xyz/'
+      return this.urlDetected ? 'http://localhost:9001' : 'https://aitools.181901.xyz/'
     }
   },
   mounted() {
-    // 5秒后如果还在加载，显示错误信息
-    setTimeout(() => {
-      if (this.loading) {
-        this.loading = false
-        this.error = 'AI工具平台服务可能未启动，请确保localhost:9001可访问'
-      }
-    }, 5000)
-
-    this.$nextTick(() => {
-      this.initializeIframe()
+    // 先检测本地服务，再初始化iframe
+    this.detectLocalService().then(() => {
+      this.$nextTick(() => {
+        this.initializeIframe()
+      })
     })
 
     // 监听窗口大小变化
     window.addEventListener('resize', this.handleWindowResize)
 
-    // 使用ResizeObserver监听容器大小变化（更精确）
+    // 使用ResizeObserver监听容器大小变化
     if (window.ResizeObserver) {
       this.resizeObserver = new ResizeObserver(this.handleContainerResize)
       this.resizeObserver.observe(this.$refs.iframeWrapper)
@@ -100,8 +86,30 @@ export default {
       clearInterval(this.heightCheckInterval)
     }
   },
-
   methods: {
+    // 添加这个新方法
+    async detectLocalService() {
+      try {
+        // 设置较短的超时时间快速检测
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 2000) // 2秒超时
+
+        const response = await fetch('http://localhost:9001', {
+          method: 'HEAD', // 只检查连接，不获取内容
+          signal: controller.signal,
+          mode: 'no-cors' // 避免跨域问题
+        })
+
+        clearTimeout(timeoutId)
+        this.urlDetected = true
+        console.log('检测到本地AI工具服务，使用本地地址')
+      } catch (error) {
+        this.urlDetected = false
+        console.log('本地AI工具服务未启动，使用线上地址')
+      }
+    },
+
+    // 修改原有的 initializeIframe 方法，移除超时错误逻辑
     initializeIframe() {
       this.calculateContainerHeight()
       this.setIframeHeight()
@@ -229,9 +237,10 @@ export default {
       // 监听来自iframe的消息
       window.addEventListener('message', event => {
         // 根据当前使用的URL判断origin
-        const allowedOrigin = this.isDevelopment
-          ? 'http://localhost:9001'
-          : 'https://aitools.181901.xyz'
+        const allowedOrigin =
+          location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+            ? 'http://localhost:9001'
+            : 'https://aitools.181901.xyz'
 
         if (event.origin !== allowedOrigin) return
         // 处理高度调整消息
