@@ -5,7 +5,7 @@
       <div ref="iframeContainer" class="iframe-container">
         <iframe
           ref="aiToolsFrame"
-          src="http://localhost:9001"
+          :src="aiToolsUrl"
           frameborder="0"
           :scrolling="allowScrolling ? 'yes' : 'auto'"
           @load="onIframeLoad"
@@ -50,6 +50,21 @@ export default {
       showDebugInfo: false, // 关闭调试信息显示
       resizeObserver: null,
       heightCheckInterval: null
+    }
+  },
+  computed: {
+    // 判断是否为开发环境
+    isDevelopment() {
+      return (
+        process.env.NODE_ENV === 'development' ||
+        location.hostname === 'localhost' ||
+        location.hostname === '127.0.0.1'
+      )
+    },
+
+    // 根据环境自动切换URL
+    aiToolsUrl() {
+      return this.isDevelopment ? 'http://localhost:9001' : 'https://aitools.181901.xyz/'
     }
   },
   mounted() {
@@ -213,8 +228,12 @@ export default {
     setupMessageListener() {
       // 监听来自iframe的消息
       window.addEventListener('message', event => {
-        if (event.origin !== 'http://localhost:9001') return
+        // 根据当前使用的URL判断origin
+        const allowedOrigin = this.isDevelopment
+          ? 'http://localhost:9001'
+          : 'https://aitools.181901.xyz'
 
+        if (event.origin !== allowedOrigin) return
         // 处理高度调整消息
         if (event.data.type === 'resize') {
           const { height } = event.data
