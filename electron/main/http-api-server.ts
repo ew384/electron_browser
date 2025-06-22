@@ -1,10 +1,10 @@
-// electron/main/http-api-server.ts - 基于现有代码的增强版本
+// electron/main/http-api-server.ts - 使用平台适配器的版本
 import * as http from 'http';
 import * as url from 'url';
 import { WindowManager } from './window-manager';
 import { AccountStorage } from './storage/account-storage';
+import { PlatformAdapter } from './platform-adapter';
 
-// 保留原有的浏览器信息接口
 interface BrowserInfo {
     id: string;
     name: string;
@@ -25,6 +25,7 @@ export class HttpApiServer {
     private port: number = 9528; // 使用一个固定端口
     private windowManager: WindowManager;
     private accountStorage: AccountStorage;
+    private platformAdapter: PlatformAdapter;
     private commandIdCounter: number = 1; // 🔧 新增：命令ID计数器
 
     // 🔧 新增：标签页会话缓存
@@ -39,14 +40,25 @@ export class HttpApiServer {
     constructor(windowManager: WindowManager, accountStorage: AccountStorage) {
         this.windowManager = windowManager;
         this.accountStorage = accountStorage;
+        this.platformAdapter = PlatformAdapter.getInstance();
     }
 
     async start(): Promise<void> {
+        // 🔧 验证网络配置
+        const networkValid = await this.platformAdapter.validateNetworkConfig();
+        if (!networkValid) {
+            console.warn('[HttpApiServer] ⚠️ 网络配置验证失败，使用备用配置');
+        }
         return new Promise((resolve, reject) => {
             this.server = http.createServer(this.handleRequest.bind(this));
 
-            this.server.listen(this.port, 'localhost', () => {
-                console.log(`[HttpApiServer] 🚀 HTTP API Server started on http://localhost:${this.port}`);
+            // 🔧 使用平台适配器的网络配置
+            const bindAddress = this.platformAdapter.getHTTPBindAddress();
+            
+            this.server.listen(this.port, bindAddress, () => {
+                const networkMode = this.platformAdapter.shouldUseIPv4Only() ? 'IPv4-only' : 'Auto';
+                console.log(`[HttpApiServer] 🚀 HTTP API Server started on http://${bindAddress}:${this.port}`);
+                console.log(`[HttpApiServer] 🔧 Platform: ${process.platform}, Network: ${networkMode}`);
                 resolve();
             });
 
@@ -54,7 +66,7 @@ export class HttpApiServer {
                 if (error.code === 'EADDRINUSE') {
                     console.log(`[HttpApiServer] Port ${this.port} is busy, trying ${this.port + 1}...`);
                     this.port++;
-                    this.server?.listen(this.port, 'localhost');
+                    this.server?.listen(this.port, bindAddress);
                 } else {
                     console.error('[HttpApiServer] Server error:', error);
                     reject(error);
@@ -78,7 +90,6 @@ export class HttpApiServer {
 
     private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
         try {
-            // 处理CORS预检请求
             if (req.method === 'OPTIONS') {
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -92,19 +103,17 @@ export class HttpApiServer {
             const pathname = parsedUrl.pathname;
             const method = req.method;
 
-            console.log(`[HttpApiServer] ${method} ${pathname}`);
-
-            // 设置响应头
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Access-Control-Allow-Origin', '*');
 
-            // 🔧 新增：标签页管理路由
-            if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs$/)) {
-                const accountId = pathname.split('/')[3];
-                await this.handleCreateTab(req, res, accountId);
-            } else if (method === 'GET' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs$/)) {
-                const accountId = pathname.split('/')[3];
-                await this.handleGetTabs(req, res, accountId);
+            // 路由处理（保持原有逻辑）
+            if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+\/execute-script$/)) {
+                const pathParts = pathname.split('/');
+                const accountId = pathParts[3];
+                const tabId = pathParts[5];
+                await this.handleExecuteScriptInTab(req, res, accountId, tabId);
+            } else if (method === 'GET' && pathname === '/api/health') {
+                await this.handleHealthCheck(req, res);
             } else if (method === 'DELETE' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+$/)) {
                 const pathParts = pathname.split('/');
                 const accountId = pathParts[3];
@@ -276,11 +285,15 @@ export class HttpApiServer {
             // ... 错误处理
         }
     }
-    // PUT请求方法
-    private httpRequestPUT(url: string): Promise<string> {
+    private httpRequestPUT(urlString: string): Promise<string> {
         return new Promise((resolve, reject) => {
             const http = require('http');
-            const urlObj = new URL(url);
+            
+            // 🔧 使用平台适配器处理URL
+            const processedUrl = this.platformAdapter.shouldUseIPv4Only() ? 
+                urlString.replace('localhost', '127.0.0.1') : urlString;
+            
+            const urlObj = new URL(processedUrl);
 
             const req = http.request({
                 hostname: urlObj.hostname,
@@ -351,7 +364,6 @@ export class HttpApiServer {
                 return;
             }
 
-            // 更新会话使用时间
             const sessionKey = `${accountId}-${tabId}`;
             const session = this.tabSessions.get(sessionKey);
             if (session) {
@@ -365,7 +377,8 @@ export class HttpApiServer {
                 success: true,
                 result: result,
                 tabId: tabId,
-                sessionKey: sessionKey
+                sessionKey: sessionKey,
+                platform: process.platform
             }));
 
         } catch (error) {
@@ -373,10 +386,12 @@ export class HttpApiServer {
             res.writeHead(500);
             res.end(JSON.stringify({
                 success: false,
-                error: error instanceof Error ? error.message : String(error)
+                error: error instanceof Error ? error.message : String(error),
+                platform: process.platform
             }));
         }
     }
+
 
     // 导航指定标签页
     private async handleNavigateTab(req: http.IncomingMessage, res: http.ServerResponse, accountId: string, tabId: string): Promise<void> {
@@ -794,16 +809,31 @@ export class HttpApiServer {
     }
 
     private async handleHealthCheck(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        const platformConfig = this.platformAdapter.getConfig();
+        
         res.writeHead(200);
         res.end(JSON.stringify({
             success: true,
             service: 'Electron Browser Manager HTTP API',
             timestamp: new Date().toISOString(),
             port: this.port,
+            platform: {
+                os: process.platform,
+                arch: process.arch,
+                version: process.getSystemVersion(),
+                nodeVersion: process.version
+            },
+            networkConfig: {
+                bindAddress: platformConfig.networkConfig.httpBindAddress,
+                ipv4Only: platformConfig.networkConfig.useIPv4Only,
+                protocol: platformConfig.networkConfig.websocketProtocol
+            },
             features: {
                 tabManagement: true,
                 concurrentOperations: true,
-                legacyCompatibility: true
+                legacyCompatibility: true,
+                platformOptimized: true,
+                ...platformConfig.features
             }
         }));
     }
@@ -1091,25 +1121,23 @@ export class HttpApiServer {
     }
 
     private async executeScriptInTab(port: number, tabId: string, script: string, options: any = {}): Promise<any> {
-        console.log(`[HttpApiServer] 🎯 准备执行脚本 (标签页: ${tabId}):`);
-        console.log(`脚本长度: ${script.length} 字符`);
-        console.log(`脚本开头: ${script.substring(0, 200)}...`);
-        console.log(`选项:`, options);
+        console.log(`[HttpApiServer] 🎯 执行脚本 (标签页: ${tabId}, 平台: ${process.platform})`);
 
         return new Promise((resolve, reject) => {
             const WebSocket = require('ws');
-            const ws = new WebSocket(`ws://localhost:${port}/devtools/page/${tabId}`);
+            
+            // 🔧 使用平台适配器格式化WebSocket URL
+            const wsUrl = this.platformAdapter.formatWebSocketURL('localhost', port, `/devtools/page/${tabId}`);
+            console.log(`[HttpApiServer] 🔗 WebSocket连接: ${wsUrl}`);
+            
+            const ws = new WebSocket(wsUrl);
 
             let resolved = false;
             let timeoutId: NodeJS.Timeout;
 
             const cleanup = () => {
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                }
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.close();
-                }
+                if (timeoutId) clearTimeout(timeoutId);
+                if (ws.readyState === WebSocket.OPEN) ws.close();
             };
 
             const handleResolve = (result: any) => {
@@ -1127,7 +1155,7 @@ export class HttpApiServer {
             };
 
             ws.on('open', () => {
-                console.log(`[HttpApiServer] ✅ WebSocket连接成功到标签页: ${tabId}`);
+                console.log(`[HttpApiServer] ✅ WebSocket连接成功 (${process.platform})`);
                 const commandId = this.commandIdCounter++;
 
                 const command = {
@@ -1136,19 +1164,10 @@ export class HttpApiServer {
                     params: {
                         expression: script,
                         returnByValue: options.returnByValue !== false,
-                        awaitPromise: options.awaitPromise || false,  // 🔧 确保默认false
-                        timeout: 30000  // 🔧 添加超时设置
+                        awaitPromise: options.awaitPromise || false,
+                        timeout: 30000
                     }
                 };
-
-                console.log(`[HttpApiServer] 📤 发送CDP命令 (ID: ${commandId}):`, {
-                    id: commandId,
-                    method: command.method,
-                    params: {
-                        ...command.params,
-                        expression: script.substring(0, 100) + '...'  // 只显示脚本开头
-                    }
-                });
 
                 ws.send(JSON.stringify(command));
 
@@ -1162,11 +1181,11 @@ export class HttpApiServer {
                                 handleReject(new Error(`CDP Error: ${response.error.message}`));
                             } else {
                                 const simplifiedResult = response.result?.result?.value || response.result;
-                                handleResolve({ value: simplifiedResult });  // 直接返回简化结构
+                                handleResolve({ value: simplifiedResult });
                             }
                         }
                     } catch (parseError) {
-                        // ...
+                        handleReject(new Error(`Response parse error: ${parseError}`));
                     }
                 };
 
@@ -1174,53 +1193,42 @@ export class HttpApiServer {
             });
 
             ws.on('error', (error: any) => {
-                console.error(`[HttpApiServer] ❌ WebSocket连接错误:`, error);
+                console.error(`[HttpApiServer] ❌ WebSocket错误 (${process.platform}):`, error);
                 handleReject(new Error(`WebSocket error: ${error.message}`));
             });
 
             ws.on('close', (code: number, reason: string) => {
-                console.log(`[HttpApiServer] 🔌 WebSocket连接已关闭: ${tabId}, code: ${code}, reason: ${reason}`);
                 if (!resolved) {
                     handleReject(new Error(`WebSocket closed unexpectedly: ${code} ${reason}`));
                 }
             });
 
-            // 🔧 设置合理的超时时间
             timeoutId = setTimeout(() => {
-                console.error(`[HttpApiServer] ⏰ 脚本执行超时: ${tabId}`);
                 handleReject(new Error('Script execution timeout (30s)'));
-            }, 30000);  // 改为30秒
+            }, 30000);
         });
     }
 
-    // 🔧 修复：sendCDPCommand方法也需要同样的修复
     private async sendCDPCommand(port: number, tabId: string, method: string, params: any = {}): Promise<any> {
         return new Promise((resolve, reject) => {
             const WebSocket = require('ws');
-            const ws = new WebSocket(`ws://localhost:${port}/devtools/page/${tabId}`);
+            
+            // 🔧 使用平台适配器格式化URL
+            const wsUrl = this.platformAdapter.formatWebSocketURL('localhost', port, `/devtools/page/${tabId}`);
+            const ws = new WebSocket(wsUrl);
 
             let resolved = false;
             let timeoutId: NodeJS.Timeout;
 
             const cleanup = () => {
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                }
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.close();
-                }
+                if (timeoutId) clearTimeout(timeoutId);
+                if (ws.readyState === WebSocket.OPEN) ws.close();
             };
 
             ws.on('open', () => {
-                // 🔧 修复：使用简单的递增整数作为命令ID
                 const commandId = this.commandIdCounter++;
-                const command = {
-                    id: commandId,
-                    method: method,
-                    params: params
-                };
+                const command = { id: commandId, method, params };
 
-                console.log(`[HttpApiServer] 📤 发送CDP命令 (${method}, ID: ${commandId}):`, JSON.stringify(command));
                 ws.send(JSON.stringify(command));
 
                 const messageHandler = (data: any) => {
@@ -1253,7 +1261,6 @@ export class HttpApiServer {
                 }
             });
 
-            // 30秒超时
             timeoutId = setTimeout(() => {
                 if (!resolved) {
                     resolved = true;
@@ -1423,11 +1430,17 @@ export class HttpApiServer {
         }
     }
 
-    // 辅助方法：HTTP请求
-    private httpRequest(url: string, timeout: number = 3000): Promise<string> {
+    private httpRequest(urlString: string, timeout: number = 3000): Promise<string> {
         return new Promise((resolve, reject) => {
             const http = require('http');
-            const req = http.get(url, { timeout }, (res: any) => {
+            
+            // 🔧 使用平台适配器处理URL
+            const processedUrl = this.platformAdapter.shouldUseIPv4Only() ? 
+                urlString.replace('localhost', '127.0.0.1') : urlString;
+            
+            console.log(`[HttpApiServer] 🔗 HTTP请求 (${process.platform}): ${processedUrl}`);
+            
+            const req = http.get(processedUrl, { timeout }, (res: any) => {
                 let data = '';
                 res.on('data', (chunk: any) => data += chunk);
                 res.on('end', () => resolve(data));
@@ -1441,7 +1454,16 @@ export class HttpApiServer {
         });
     }
 
+
     getPort(): number {
         return this.port;
+    }
+    getPlatformInfo() {
+        return {
+            platform: process.platform,
+            config: this.platformAdapter.getConfig(),
+            bindAddress: this.platformAdapter.getHTTPBindAddress(),
+            ipv4Only: this.platformAdapter.shouldUseIPv4Only()
+        };
     }
 }
