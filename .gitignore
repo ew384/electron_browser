@@ -11,3 +11,4 @@ electron/dist/
 server/dist/
 automation/output/
 automation/test/output/
+llm_fastAPI/__pycache__/
