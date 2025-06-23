@@ -56,6 +56,7 @@
 │   │   ├── http-api-server.ts
 │   │   ├── index.ts
 │   │   ├── ipc-handlers.ts
+│   │   ├── platform-adapter.ts
 │   │   ├── storage
 │   │   │   └── account-storage.ts
 │   │   └── window-manager.ts
@@ -83,7 +84,8 @@
 │   ├── shared
 │   │   ├── constants.ts
 │   │   └── types.ts
-│   └── tsconfig.json
+│   ├── tsconfig.json
+│   └── yarn.lock
 ├── LICENSE
 ├── package.json
 ├── package-lock.json
@@ -290,6 +292,8 @@
 │   │       ├── agent
 │   │       │   ├── components
 │   │       │   └── index.vue
+│   │       ├── ai-tools
+│   │       │   └── index.vue
 │   │       ├── browser
 │   │       │   ├── group.vue
 │   │       │   └── index.vue
@@ -303,7 +307,9 @@
 │   │       │   ├── auth-redirect.vue
 │   │       │   ├── components
 │   │       │   └── index.vue
-│   │       └── redirect
+│   │       ├── redirect
+│   │       │   └── index.vue
+│   │       └── workflow
 │   │           └── index.vue
 │   └── vue.config.js
 ├── start.js
@@ -323,25 +329,26 @@
 │       ├── scan-ports.js
 │       └── wechat_analyzer.js
 ├── tree.sh
-└── worker
-    ├── auto-imports.d.ts
-    ├── babel.config.js
-    ├── components.d.ts
-    ├── package.json
-    ├── package-lock.json
-    ├── public
-    │   ├── favicon.ico
-    │   └── index.html
-    ├── README.md
-    ├── src
-    │   ├── App.vue
-    │   ├── assets
-    │   ├── main.ts
-    │   ├── shims-vue.d.ts
-    │   └── utils
-    │       ├── index.js
-    │       └── native.js
-    ├── tsconfig.json
-    └── vue.config.js
+├── worker
+│   ├── auto-imports.d.ts
+│   ├── babel.config.js
+│   ├── components.d.ts
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── public
+│   │   ├── favicon.ico
+│   │   └── index.html
+│   ├── README.md
+│   ├── src
+│   │   ├── App.vue
+│   │   ├── assets
+│   │   ├── main.ts
+│   │   ├── shims-vue.d.ts
+│   │   └── utils
+│   │       ├── index.js
+│   │       └── native.js
+│   ├── tsconfig.json
+│   └── vue.config.js
+└── yarn.lock
 
-110 directories, 234 files
+112 directories, 239 files
