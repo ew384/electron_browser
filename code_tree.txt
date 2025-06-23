@@ -6,6 +6,7 @@
 │   ├── cli
 │   │   └── automation-cli.js
 │   ├── config
+│   │   ├── llm-platforms.js
 │   │   ├── platforms.js
 │   │   ├── templates
 │   │   └── workflows.json
@@ -15,16 +16,23 @@
 │   │   ├── electron-browser-api.js
 │   │   ├── file-uploader.js
 │   │   ├── index.js
+│   │   ├── llm-controller.js
 │   │   ├── template-engine.js
 │   │   └── workflow-engine.js
 │   ├── debug-page-elements.js
 │   ├── engines
 │   │   ├── douyin-video-publisher.js
+│   │   ├── llm-publishers
+│   │   │   └── claude-llm-publisher.js
 │   │   ├── multi-platform-engine.js
 │   │   ├── wechat-video-publisher.js
 │   │   └── xiaohongshu-video-publisher.js
 │   ├── integration
 │   │   └── browser-integration.js
+│   ├── llm-service
+│   │   ├── index.js
+│   │   ├── package.json
+│   │   └── package-lock.json
 │   ├── logs
 │   ├── output
 │   │   └── wechat-video-account_1748421858240_7ua5pcz7x-2025-06-16T02-28-34-247Z.json
@@ -87,6 +95,8 @@
 │   ├── tsconfig.json
 │   └── yarn.lock
 ├── LICENSE
+├── llm_fastAPI
+│   └── LLM_chromeTab_manager.py
 ├── package.json
 ├── package-lock.json
 ├── README.md
@@ -351,4 +361,4 @@
 │   └── vue.config.js
 └── yarn.lock
 
-112 directories, 239 files
+115 directories, 246 files
