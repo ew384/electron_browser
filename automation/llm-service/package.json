@@ -1,0 +1,25 @@
+{
+    "name": "llm-cdp-service",
+    "version": "1.0.0",
+    "description": "独立的LLM CDP服务 - 基于Chrome DevTools Protocol的LLM API服务",
+    "type": "module",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js",
+        "dev": "node --inspect index.js",
+        "test": "node test.js"
+    },
+    "keywords": [
+        "llm",
+        "cdp",
+        "chrome",
+        "claude",
+        "chatgpt",
+        "automation"
+    ],
+    "author": "Endian Wang",
+    "license": "MIT",
+    "engines": {
+        "node": ">=16.0.0"
+    }
+}
