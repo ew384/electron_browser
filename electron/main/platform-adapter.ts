@@ -61,7 +61,7 @@ export class PlatformAdapter {
     private getMacOSConfig(version: string): PlatformConfig {
         // macOS特殊处理：强制IPv4，处理安全策略
         const isBigSurOrLater = this.compareVersion(version, '11.0.0') >= 0;
-        
+
         return {
             networkConfig: {
                 httpBindAddress: '127.0.0.1',  // 🔧 强制IPv4解决macOS问题
@@ -96,7 +96,7 @@ export class PlatformAdapter {
     private getLinuxConfig(): PlatformConfig {
         // Linux：原有配置保持不变，较为稳定
         const hasDisplay = !!process.env.DISPLAY;
-        
+
         return {
             networkConfig: {
                 httpBindAddress: 'localhost',   // Linux通常IPv4/IPv6都正常
@@ -130,7 +130,7 @@ export class PlatformAdapter {
     private getWindowsConfig(): PlatformConfig {
         // Windows：处理权限和路径问题
         const isWin10OrLater = this.compareVersion(process.getSystemVersion(), '10.0.0') >= 0;
-        
+
         return {
             networkConfig: {
                 httpBindAddress: 'localhost',
@@ -190,11 +190,11 @@ export class PlatformAdapter {
     private compareVersion(version1: string, version2: string): number {
         const v1parts = version1.split('.').map(Number);
         const v2parts = version2.split('.').map(Number);
-        
+
         for (let i = 0; i < Math.max(v1parts.length, v2parts.length); i++) {
             const v1part = v1parts[i] || 0;
             const v2part = v2parts[i] || 0;
-            
+
             if (v1part > v2part) return 1;
             if (v1part < v2part) return -1;
         }
@@ -244,13 +244,13 @@ export class PlatformAdapter {
     }
 
     formatWebSocketURL(host: string, port: number, path: string): string {
-        const targetHost = this.config.networkConfig.useIPv4Only ? 
+        const targetHost = this.config.networkConfig.useIPv4Only ?
             host.replace('localhost', '127.0.0.1') : host;
         return `ws://${targetHost}:${port}${path}`;
     }
 
     formatHTTPURL(host: string, port: number, path: string): string {
-        const targetHost = this.config.networkConfig.useIPv4Only ? 
+        const targetHost = this.config.networkConfig.useIPv4Only ?
             host.replace('localhost', '127.0.0.1') : host;
         return `http://${targetHost}:${port}${path}`;
     }
@@ -261,15 +261,15 @@ export class PlatformAdapter {
             // 测试HTTP服务器是否能正常绑定
             const http = require('http');
             const testServer = http.createServer();
-            
+
             return new Promise<boolean>((resolve) => {
                 testServer.listen(0, this.config.networkConfig.httpBindAddress, () => {
                     const actualPort = testServer.address()?.port;
                     console.log(`[PlatformAdapter] ✅ 网络配置验证成功，测试端口: ${actualPort}`);
                     testServer.close(() => resolve(true));
                 });
-                
-                testServer.on('error', (error) => {
+
+                testServer.on('error', (error: Error) => {
                     console.error(`[PlatformAdapter] ❌ 网络配置验证失败:`, error.message);
                     resolve(false);
                 });
