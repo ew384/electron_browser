@@ -25,12 +25,13 @@ export class ClaudeLLMPublisher {
     async checkLoggedIn() {
         try {
             console.log('[Claude] 检查登录状态...');
-
+            const loggedInSelectors = this.selectors.loggedInIndicator.split(', ');
+            const selectorChecks = loggedInSelectors.map(sel => `document.querySelector('${sel.trim()}')`).join(' || ');
             const script = `
                 (function() {
                     try {
                         // 检查登录指示器
-                        const loggedInIndicator = document.querySelector('${this.selectors.loggedInIndicator}');
+                        const loggedInIndicator = ${selectorChecks};
                         if (loggedInIndicator) {
                             return { loggedIn: true, method: 'indicator' };
                         }
@@ -63,7 +64,8 @@ export class ClaudeLLMPublisher {
             const result = await this.llmController.executeLLMScript(this.session, script);
 
             if (result.success && result.result) {
-                this.loggedIn = result.result.loggedIn;
+                const checkResult = result.result.value || result.result;
+                this.loggedIn = checkResult.loggedIn;
                 console.log(`[Claude] 登录状态: ${this.loggedIn ? '✅已登录' : '❌未登录'} (${result.result.method})`);
                 return this.loggedIn;
             } else {
@@ -246,7 +248,8 @@ export class ClaudeLLMPublisher {
             const result = await this.llmController.executeLLMScript(this.session, script);
 
             if (result.success && result.result) {
-                this.conversationId = result.result;
+                const chatId = result.result.value || result.result;
+                this.conversationId = chatId;
                 console.log(`[Claude] 获取对话ID: ${this.conversationId}`);
                 return this.conversationId;
             }
@@ -515,11 +518,12 @@ export class ClaudeLLMPublisher {
                 timeout: 30000
             });
 
-            if (result.success && result.result.success) {
+            const sendResult = result.result.value || result.result;  // 🔧 修复
+            if (result.success && sendResult.success) {
                 console.log('[Claude] ✅ 消息发送成功');
                 return { success: true };
             } else {
-                throw new Error(result.result?.error || '消息发送失败');
+                throw new Error(sendResult?.error || '消息发送失败');
             }
 
         } catch (error) {
@@ -546,47 +550,38 @@ export class ClaudeLLMPublisher {
                         const checkInterval = ${this.timing.responseCheckInterval};
                         const startTime = Date.now();
                         
-                        console.log('[Claude Wait] 开始等待响应，超时时间:', maxWaitTime + 'ms');
-                        
                         while (Date.now() - startTime < maxWaitTime) {
                             // 检查思维指示器是否消失
-                            const thinkingIndicator = document.querySelector('${this.selectors.thinkingIndicator}');
+                            const thinkingIndicator = document.querySelector('[data-testid="conversation-turn-loading"]') || 
+                                                    document.querySelector('.animate-pulse');
                             
                             // 检查输入框是否重新启用
                             const textArea = document.querySelector('div.ProseMirror[contenteditable="true"]');
-                            const sendButton = document.querySelector('${this.selectors.sendButton}:not([disabled])');
+                            const sendButton = document.querySelector('button[aria-label*="send" i]:not([disabled])');
                             
-                            // 检查重新生成按钮
-                            let regenerateButton = null;
+                            // 检查重新生成按钮（只返回是否存在，不返回元素本身）
                             const buttons = Array.from(document.querySelectorAll('button'));
-                            for (const button of buttons) {
-                                if (button.textContent.includes('Regenerate') || 
-                                    button.textContent.includes('重新生成') ||
-                                    button.textContent.includes('Retry')) {
-                                    regenerateButton = button;
-                                    break;
-                                }
-                            }
+                            const hasRegenerateButton = buttons.some(btn => 
+                                btn.textContent.includes('Regenerate') || 
+                                btn.textContent.includes('重新生成') ||
+                                btn.textContent.includes('Retry')
+                            );
                             
-                            // 如果没有思维指示器且输入框可用，或者有重新生成按钮，认为响应完成
-                            const isComplete = (!thinkingIndicator && textArea && sendButton) || regenerateButton;
+                            // 判断响应是否完成
+                            const isComplete = (!thinkingIndicator && textArea && sendButton) || hasRegenerateButton;
                             
                             if (isComplete) {
                                 const waitTime = Date.now() - startTime;
-                                console.log('[Claude Wait] 响应完成，等待时间:', waitTime + 'ms');
                                 return {
                                     success: true,
                                     waitTime: waitTime,
-                                    hasRegenerateButton: !!regenerateButton
+                                    hasRegenerateButton: hasRegenerateButton
                                 };
                             }
                             
-                            // 等待检查间隔
                             await new Promise(resolve => setTimeout(resolve, checkInterval));
                         }
                         
-                        // 超时
-                        console.log('[Claude Wait] 响应等待超时');
                         return {
                             success: false,
                             error: 'Response timeout',
@@ -607,13 +602,16 @@ export class ClaudeLLMPublisher {
                 timeout: this.timing.responseTimeout + 5000
             });
 
-            if (result.success && result.result.success) {
-                console.log('[Claude] ✅ 响应等待完成');
-                // 额外等待2秒确保内容完全加载
-                await this.delay(2000);
-                return { success: true };
-            } else {
-                throw new Error(result.result?.error || '响应等待失败');
+            if (result.success && result.result) {
+                const waitResult = result.result.value || result.result;  // 🔧 修复解析
+
+                if (waitResult && waitResult.success) {
+                    console.log('[Claude] ✅ 响应等待完成');
+                    await this.delay(2000);
+                    return { success: true };
+                } else {
+                    throw new Error(waitResult?.error || '响应等待失败');
+                }
             }
 
         } catch (error) {
@@ -635,17 +633,21 @@ export class ClaudeLLMPublisher {
         try {
             console.log('[Claude] 开始提取页面内容...');
 
-            // 首先提取代码版本信息
-            const codeVersions = await this.extractCodeVersions();
-
-            // 然后提取完整对话内容
+            // 🔧 从配置中获取选择器
+            const mainContentSelector = this.selectors.mainContentArea;
+            const userMessageSelector = this.selectors.userMessage;
+            const assistantMessageSelector = this.selectors.assistantMessage;
+            const responseTextSelector = this.selectors.responseText;
+            const codeBlockSelector = this.selectors.codeBlocks;
+            const codeBlockContainerSelector = this.selectors.codeBlockContainer;
+            const codeVersionSelector = this.selectors.codeVersionButtons;
+            const artifactSelector = this.selectors.artifactButtons;
+            const documentSelector = this.selectors.documentButtons;
             const contentScript = `
                 (function() {
                     try {
-                        const codeVersionsMap = new Map(${JSON.stringify(codeVersions)});
-                        
-                        // 查找主要内容区域
-                        const mainContentArea = document.querySelector('div.flex-1.flex.flex-col.gap-3');
+                        // 使用配置中的选择器
+                        const mainContentArea = document.querySelector('${mainContentSelector}');
                         if (!mainContentArea) {
                             return { error: "无法找到主要内容区域" };
                         }
@@ -661,7 +663,7 @@ export class ClaudeLLMPublisher {
                         
                         for (const element of conversationElements) {
                             // 检查是否是用户查询
-                            const isUserQuery = element.querySelector('.bg-bg-300');
+                            const isUserQuery = element.querySelector('${userMessageSelector}');
                             
                             if (isUserQuery) {
                                 // 保存前一个对话轮次
@@ -673,7 +675,6 @@ export class ClaudeLLMPublisher {
                                 // 提取用户查询文本
                                 let queryText = isUserQuery.textContent.trim();
                                 queryText = queryText.replace(/Edit$/, '').trim();
-                                queryText = queryText.replace(/^[A-Z]\\s*/, '');
                                 
                                 // 创建新的对话轮次
                                 currentTurn = {
@@ -686,10 +687,17 @@ export class ClaudeLLMPublisher {
                                 };
                             } else if (currentTurn) {
                                 // 处理Claude的回复
-                                const hasResponseContent = element.querySelector('.font-claude-message') || 
-                                                          element.querySelector('[class*="tracking"]');
+                                const hasResponseContent = element.querySelector('${assistantMessageSelector}');
                                 
                                 if (hasResponseContent) {
+                                    // 提取响应文本
+                                    const responseTexts = element.querySelectorAll('${responseTextSelector}');
+                                    const responses = Array.from(responseTexts).map(p => p.textContent.trim()).filter(text => text);
+                                    
+                                    if (responses.length > 0) {
+                                        currentTurn.responses.push(...responses);
+                                    }
+                                    
                                     // 提取代码块
                                     await this.extractCodeBlocks(element, currentTurn, codeVersionsMap);
                                     
@@ -720,17 +728,20 @@ export class ClaudeLLMPublisher {
                     }
                 })()
             `;
-
-            const result = await this.llmController.executeLLMScript(this.session, contentScript, {
-                awaitPromise: true,
-                timeout: 30000
-            });
+            // 执行内容提取脚本
+            const result = await this.llmController.executeLLMScript(this.session, contentScript);
 
             if (result.success && result.result && !result.result.error) {
-                console.log('[Claude] ✅ 页面内容提取完成');
+                const extractedContent = result.result.value || result.result;
 
-                // 格式化为OpenAI兼容格式
-                const formattedContent = await this.formatToOpenAIStyle(result.result);
+                // 确保 conversationTurns 是数组
+                if (!extractedContent.conversationTurns || !Array.isArray(extractedContent.conversationTurns)) {
+                    console.warn('[Claude] 内容提取结果格式异常，使用默认结构');
+                    extractedContent.conversationTurns = [];
+                }
+
+                console.log('[Claude] ✅ 页面内容提取完成');
+                const formattedContent = await this.formatToOpenAIStyle(extractedContent);
                 return formattedContent;
             } else {
                 throw new Error(result.result?.error || '内容提取失败');

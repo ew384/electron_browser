@@ -19,14 +19,29 @@ export const LLM_PLATFORM_CONFIGS = {
         selectors: {
             // 登录检测
             loginButton: 'button:has-text("Log in")',
-            loggedInIndicator: 'a[href="/new"]',
+            loggedInIndicator: 'a[href="/new"], a[href*="/new"], div[contenteditable="true"], .ProseMirror',
 
-            // 聊天界面
+            // 聊天界面  
             newChatButton: 'a[href="/new"]',
             promptTextarea: '.ProseMirror, div[contenteditable="true"]',
             sendButton: 'button[aria-label*="send" i], button[aria-label*="Send Message"]',
-            responseContainer: '[data-message-author-role="assistant"]',
+            responseContainer: '.font-claude-message, [class*="font-claude-message"]',
             thinkingIndicator: '[data-testid="conversation-turn-loading"], .animate-pulse',
+
+            // 🔧 新增：基于页面分析的精确选择器
+            mainContentArea: 'div.flex-1.flex.flex-col.gap-3',  // 主对话容器
+            userMessage: '[data-testid="user-message"]',         // 用户消息
+            userMessageText: '[data-testid="user-message"] p',   // 用户消息文本
+            assistantMessage: '.font-claude-message',            // AI回复容器
+            assistantMessageText: '.font-claude-message p, .font-claude-message .whitespace-normal', // AI回复文本
+            // 🔧 新增：代码块和Artifact相关选择器
+            codeBlocks: '.code-block__code code, pre code, .language-javascript, .language-python, .language-html, .language-css',
+            codeBlockContainer: '.code-block__code, pre, [class*="code-block"]',
+            codeVersionButtons: 'button:contains("Code"), button:contains("Version"), [class*="code-version"]',
+
+            // Artifact按钮选择器
+            artifactButtons: 'button:contains("💾"), button:contains("保存"), button[class*="bg-orange-500"]',
+            documentButtons: 'button[class*="font-styrene"][class*="border-0"], button:contains("Document")',
 
             // 文件上传
             uploadButton: '[aria-label*="upload" i]',

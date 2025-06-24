@@ -31,90 +31,7 @@ export class LLMController {
     // ==================== LLM会话管理 ====================
 
     /**
-     * 创建LLM专用会话
-     * @param {string} apiKey - API密钥
-     * @param {string} provider - LLM提供商 (claude, chatgpt, qwen, deepseek)
-     * @returns {Object} 会话信息
-     */
-    async createLLMSession(apiKey, provider) {
-        console.log(`🤖 创建LLM会话: ${apiKey} - ${provider}`);
-
-        try {
-            // 检查是否已有该提供商的会话
-            if (this.llmSessions.has(apiKey) && this.llmSessions.get(apiKey)[provider]) {
-                const existingSession = this.llmSessions.get(apiKey)[provider];
-
-                // 验证现有会话是否仍然有效
-                const isValid = await this.validateLLMSession(existingSession);
-                if (isValid) {
-                    console.log(`✅ 复用现有LLM会话: ${existingSession.sessionId}`);
-                    existingSession.lastUsed = Date.now();
-                    return existingSession;
-                } else {
-                    // 会话无效，清理并创建新会话
-                    console.log(`🔄 现有LLM会话无效，创建新会话`);
-                    await this.closeLLMSession(apiKey, provider);
-                }
-            }
-
-            // 获取LLM平台配置
-            const llmConfig = getLLMConfig(provider);
-            if (!llmConfig) {
-                throw new Error(`不支持的LLM提供商: ${provider}`);
-            }
-
-            // 获取可用的浏览器实例
-            const browserInstance = await this.electronAPI.getBrowserInstanceByAccount(apiKey);
-            // 添加调试日志
-            console.log('🔍 [DEBUG] browserInstance:', browserInstance);
-            console.log('🔍 [DEBUG] browserInstance.accountId:', browserInstance.accountId);
-            if (!browserInstance || browserInstance.status !== 'running') {
-                throw new Error(`API密钥 ${apiKey} 的浏览器实例未运行`);
-            }
-
-            // 为LLM创建专用标签页
-            const chatUrl = getLLMPlatformUrl(provider, 'chat') + `?user=${apiKey}`;
-            const realAccountId = browserInstance.accountId;  // 确保有这个变量
-            const tabResponse = await this.createLLMTab(realAccountId, provider, chatUrl);
-            if (!tabResponse.success) {
-                throw new Error(`创建LLM标签页失败: ${tabResponse.error}`);
-            }
-
-            // 创建会话对象
-            const sessionId = `llm-${provider}-${apiKey}-${this.sessionIdCounter++}`;
-            const session = {
-                sessionId: sessionId,
-                apiKey: apiKey,
-                provider: provider,
-                tabId: tabResponse.tabId,
-                handle: tabResponse.handle,
-                browserInstance: browserInstance,
-                debugPort: browserInstance.debugPort,
-                status: 'active',
-                llmConfig: llmConfig,
-                createdAt: Date.now(),
-                lastUsed: Date.now(),
-                messageCount: 0,
-                sessionKey: tabResponse.sessionKey
-            };
-
-            // 存储会话
-            if (!this.llmSessions.has(apiKey)) {
-                this.llmSessions.set(apiKey, {});
-            }
-            this.llmSessions.get(apiKey)[provider] = session;
-
-            console.log(`✅ LLM会话创建成功: ${sessionId}`);
-            return session;
-
-        } catch (error) {
-            console.error(`❌ LLM会话创建失败: ${error.message}`);
-            throw error;
-        }
-    }
-
-    /**
-     * 创建LLM专用标签页
+     * 创建LLM专用标签页 - 修复版本
      * @param {string} apiKey - API密钥
      * @param {string} provider - LLM提供商
      * @param {string} url - 目标URL
@@ -122,8 +39,20 @@ export class LLMController {
      */
     async createLLMTab(apiKey, provider, url) {
         try {
+            // 🔧 修复：获取正确的浏览器实例信息
+            const browserInstance = await this.electronAPI.getBrowserInstanceByAccount(apiKey);
+
+            if (!browserInstance || browserInstance.status !== 'running') {
+                throw new Error(`API密钥 ${apiKey} 的浏览器实例未运行`);
+            }
+
+            // 使用真实的浏览器账号ID
+            const realAccountId = browserInstance.accountId;
+
+            console.log(`🔧 [DEBUG] 创建标签页 - 原始用户: ${apiKey}, 真实账号: ${realAccountId}`);
+
             const response = await this.httpRequest(
-                `${this.config.electronApiUrl}/api/browser/${apiKey}/tabs`,
+                `${this.config.electronApiUrl}/api/browser/${realAccountId}/tabs`,
                 {
                     method: 'POST',
                     body: JSON.stringify({
@@ -147,7 +76,8 @@ export class LLMController {
                 tabId: response.tabId,
                 handle: response.tabId, // 在HTTP API中，tabId就是handle
                 sessionKey: response.sessionKey || `${apiKey}-${response.tabId}`,
-                url: url
+                url: url,
+                realAccountId: realAccountId // 🔧 新增：返回真实账号ID
             };
 
         } catch (error) {
@@ -159,6 +89,139 @@ export class LLMController {
         }
     }
 
+    /**
+     * 创建LLM专用会话 - 修复版本
+     * @param {string} apiKey - API密钥
+     * @param {string} provider - LLM提供商 (claude, chatgpt, qwen, deepseek)
+     * @returns {Object} 会话信息
+     */
+    async createLLMSession(apiKey, provider) {
+        console.log(`🤖 创建LLM会话: ${apiKey} - ${provider}`);
+
+        try {
+            // 检查是否已有该提供商的会话
+            if (this.llmSessions.has(apiKey) && this.llmSessions.get(apiKey)[provider]) {
+                const existingSession = this.llmSessions.get(apiKey)[provider];
+
+                // 验证现有会话是否仍然有效
+                const isValid = await this.validateLLMSession(existingSession);
+                if (isValid) {
+                    console.log(`✅ 复用现有LLM会话: ${existingSession.sessionId}`);
+                    console.log(`🔍 现有tab: ${existingSession.tabId}`);
+                    existingSession.lastUsed = Date.now();
+                    return existingSession;
+                } else {
+                    // 会话无效，清理并创建新会话
+                    console.log(`🔄 现有LLM会话无效，创建新会话`);
+                    await this.closeLLMSession(apiKey, provider);
+                }
+            }
+
+            // 获取LLM平台配置
+            const llmConfig = getLLMConfig(provider);
+            if (!llmConfig) {
+                throw new Error(`不支持的LLM提供商: ${provider}`);
+            }
+
+            // 获取可用的浏览器实例
+            const browserInstance = await this.electronAPI.getBrowserInstanceByAccount(apiKey);
+
+            if (!browserInstance || browserInstance.status !== 'running') {
+                throw new Error(`API密钥 ${apiKey} 的浏览器实例未运行`);
+            }
+
+            console.log(`🔍 [DEBUG] 浏览器实例信息:`, {
+                originalApiKey: apiKey,
+                realAccountId: browserInstance.accountId,
+                debugPort: browserInstance.debugPort,
+                isLLMSharedInstance: browserInstance.isLLMSharedInstance
+            });
+
+            // 为LLM创建专用标签页
+            const chatUrl = getLLMPlatformUrl(provider, 'chat') + `?user=${apiKey}`;
+            const tabResponse = await this.createLLMTab(apiKey, provider, chatUrl);
+
+            if (!tabResponse.success) {
+                throw new Error(`创建LLM标签页失败: ${tabResponse.error}`);
+            }
+
+            // 创建会话对象
+            const sessionId = `llm-${provider}-${apiKey}-${this.sessionIdCounter++}`;
+            const session = {
+                sessionId: sessionId,
+                apiKey: apiKey, // 保留原始apiKey用于逻辑识别
+                provider: provider,
+                tabId: tabResponse.tabId,
+                handle: tabResponse.handle,
+                browserInstance: browserInstance, // 🔧 关键：保存完整的浏览器实例信息
+                debugPort: browserInstance.debugPort,
+                status: 'active',
+                llmConfig: llmConfig,
+                createdAt: Date.now(),
+                lastUsed: Date.now(),
+                messageCount: 0,
+                sessionKey: tabResponse.sessionKey
+            };
+
+            // 存储会话
+            if (!this.llmSessions.has(apiKey)) {
+                this.llmSessions.set(apiKey, {});
+            }
+            this.llmSessions.get(apiKey)[provider] = session;
+
+            console.log(`✅ LLM会话创建成功: ${sessionId}`);
+            console.log(`🔍 [DEBUG] 会话详情:`, {
+                sessionId: session.sessionId,
+                apiKey: session.apiKey,
+                realAccountId: session.browserInstance.accountId,
+                tabId: session.tabId,
+                debugPort: session.debugPort
+            });
+
+            return session;
+
+        } catch (error) {
+            console.error(`❌ LLM会话创建失败: ${error.message}`);
+            throw error;
+        }
+    }
+    /**
+     * 🔧 新增：更新LLM会话的标签页ID
+     * @param {Object} session - LLM会话对象
+     * @returns {boolean} 是否成功更新
+     */
+    async updateSessionTabId(session) {
+        try {
+            const port = session.debugPort;
+
+            // 获取当前所有标签页
+            const tabsData = await this.httpRequest(`http://localhost:${port}/json`);
+            const tabs = JSON.parse(tabsData);
+
+            // 查找Claude相关的页面标签页
+            const claudeTab = tabs.find(tab =>
+                tab.type === 'page' &&
+                tab.url &&
+                (tab.url.includes('claude.ai/chat/') || tab.url.includes('claude.ai/new'))
+            );
+
+            if (claudeTab && claudeTab.id !== session.tabId) {
+                console.log(`🔄 更新标签页ID: ${session.tabId} → ${claudeTab.id}`);
+                console.log(`🔄 URL变化: ${claudeTab.url}`);
+
+                session.tabId = claudeTab.id;
+                session.handle = claudeTab.id;
+                session.lastUsed = Date.now();
+
+                return true;
+            }
+
+            return false;
+        } catch (error) {
+            console.error('❌ 更新标签页ID失败:', error.message);
+            return false;
+        }
+    }
     /**
      * 验证LLM会话是否有效
      * @param {Object} session - 会话对象
@@ -192,28 +255,77 @@ export class LLMController {
     }
 
     /**
-     * 执行LLM脚本
-     * @param {Object} session - LLM会话
-     * @param {string} script - JavaScript脚本
-     * @param {Object} options - 执行选项
-     * @returns {Object} 执行结果
+     * 🔧 新增：查找Claude标签页ID
+     */
+    async findClaudeTabId(debugPort) {
+        try {
+            const tabsData = await this.httpRequest(`http://localhost:${debugPort}/json`);
+            const tabs = JSON.parse(tabsData);
+
+            const claudeTab = tabs.find(tab =>
+                tab.type === 'page' &&
+                tab.url &&
+                (tab.url.includes('claude.ai/chat/') || tab.url.includes('claude.ai/new'))
+            );
+
+            return claudeTab ? claudeTab.id : null;
+        } catch (error) {
+            console.error('查找Claude标签页失败:', error);
+            return null;
+        }
+    }
+
+    /**
+     * 执行LLM脚本 - 修复版本（添加标签页跟踪）
      */
     async executeLLMScript(session, script, options = {}) {
         console.log(`📜 执行LLM脚本: ${session.provider} (${session.sessionId})`);
 
         try {
-            const response = await this.httpRequest(
-                `${this.config.electronApiUrl}/api/browser/${session.apiKey}/tabs/${session.tabId}/execute-script`,
-                {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        script: script,
-                        returnByValue: options.returnByValue !== false,
-                        awaitPromise: options.awaitPromise || false,
-                        timeout: options.timeout || this.config.timeout
-                    })
+            const realAccountId = session.browserInstance.accountId;
+
+            // 🔧 先检查当前标签页是否还有效
+            let requestUrl = `${this.config.electronApiUrl}/api/browser/${realAccountId}/tabs/${session.tabId}/execute-script`;
+
+            console.log(`🔗 [DEBUG] HTTP请求URL: ${requestUrl}`);
+
+            let response = await this.httpRequest(requestUrl, {
+                method: 'POST',
+                body: JSON.stringify({
+                    script: script,
+                    returnByValue: options.returnByValue !== false,
+                    awaitPromise: options.awaitPromise || false,
+                    timeout: options.timeout || this.config.timeout
+                })
+            });
+
+            // 🔧 如果请求失败，可能是标签页ID变化了
+            if (!response.success && (response.error.includes('404') || response.error.includes('Not Found'))) {
+                console.log('🔄 标签页可能已变化，尝试查找新的标签页ID...');
+
+                const newTabId = await this.findClaudeTabId(session.debugPort);
+                if (newTabId && newTabId !== session.tabId) {
+                    console.log(`✅ 发现新标签页ID: ${session.tabId} → ${newTabId}`);
+
+                    // 更新session中的标签页信息
+                    session.tabId = newTabId;
+                    session.handle = newTabId;
+
+                    // 重新构造请求URL并重试
+                    requestUrl = `${this.config.electronApiUrl}/api/browser/${realAccountId}/tabs/${session.tabId}/execute-script`;
+                    console.log(`🔗 [DEBUG] 更新后的HTTP请求URL: ${requestUrl}`);
+
+                    response = await this.httpRequest(requestUrl, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            script: script,
+                            returnByValue: options.returnByValue !== false,
+                            awaitPromise: options.awaitPromise || false,
+                            timeout: options.timeout || this.config.timeout
+                        })
+                    });
                 }
-            );
+            }
 
             if (!response.success) {
                 throw new Error(response.error);
@@ -246,8 +358,11 @@ export class LLMController {
         try {
             console.log(`🔄 导航LLM标签页: ${session.provider} → ${url}`);
 
+            // 🔧 修复：使用正确的浏览器账号ID
+            const realAccountId = session.browserInstance.accountId;
+
             const response = await this.httpRequest(
-                `${this.config.electronApiUrl}/api/browser/${session.apiKey}/tabs/${session.tabId}/navigate`,
+                `${this.config.electronApiUrl}/api/browser/${realAccountId}/tabs/${session.tabId}/navigate`,
                 {
                     method: 'POST',
                     body: JSON.stringify({ url: url })
@@ -307,8 +422,11 @@ export class LLMController {
                 throw new Error(`文件类型 ${mimeType} 不支持，支持的类型: ${supportedTypes.join(', ')}`);
             }
 
+            // 🔧 修复：使用正确的浏览器账号ID
+            const realAccountId = session.browserInstance.accountId;
+
             const response = await this.httpRequest(
-                `${this.config.electronApiUrl}/api/browser/${session.apiKey}/tabs/${session.tabId}/upload-file`,
+                `${this.config.electronApiUrl}/api/browser/${realAccountId}/tabs/${session.tabId}/upload-file`,
                 {
                     method: 'POST',
                     body: JSON.stringify({

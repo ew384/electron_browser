@@ -28,6 +28,7 @@ export class ElectronBrowserAPI {
             console.log(`🔍 获取浏览器实例: ${accountId}`);
             console.log(`🔍 [DEBUG] llmConfig.users:`, this.llmConfig.users);
             console.log(`🔍 [DEBUG] isLLMUser(${accountId}) = ${this.isLLMUser(accountId)}`);
+
             // 🔧 LLM 用户特殊处理：映射到 LLM 专用浏览器
             if (this.isLLMUser(accountId)) {
                 console.log(`🤖 检测到LLM用户: ${accountId}，使用 LLM 专用浏览器`);
@@ -43,14 +44,18 @@ export class ElectronBrowserAPI {
                 if (llmBrowser) {
                     console.log(`✅ 找到 LLM 专用浏览器: ${llmBrowser.accountId} (端口: ${llmBrowser.debugPort})`);
 
-                    // 🔧 关键：返回时保持原始 accountId，但使用真实浏览器的信息
+                    // 🔧 关键修复：返回完整的浏览器信息，确保后续HTTP请求使用正确的accountId
                     return {
-                        accountId: llmBrowser.accountId,    // 真实浏览器账号（用于 API 调用）
-                        id: llmBrowser.accountId,           // 兼容性
+                        accountId: llmBrowser.accountId,      // 真实浏览器账号（用于 API 调用）
+                        id: llmBrowser.accountId,             // 兼容性
                         debugPort: llmBrowser.debugPort,
                         status: llmBrowser.status,
-                        originalLLMUser: accountId,         // 保留原始 LLM 用户信息
-                        isLLMSharedInstance: true
+                        name: llmBrowser.name,
+                        group: llmBrowser.group,
+                        originalLLMUser: accountId,           // 保留原始 LLM 用户信息
+                        isLLMSharedInstance: true,
+                        // 🔧 新增：添加浏览器的完整信息
+                        browserInfo: llmBrowser
                     };
                 }
 
@@ -67,50 +72,125 @@ export class ElectronBrowserAPI {
     }
 
     /**
-     * 🔧 新增：获取LLM共享浏览器实例
+     * 🔧 新增：获取LLM专用浏览器实例
      */
-    async getLLMSharedBrowserInstance(originalAccountId) {
+    async getLLMBrowserInstance(originalAccountId) {
         try {
-            console.log(`🤖 为用户 ${originalAccountId} 获取LLM共享实例`);
+            console.log(`🤖 为用户 ${originalAccountId} 查找 LLM 专用浏览器`);
 
-            // 1. 尝试从API获取llm_shared实例
+            // 1. 获取所有浏览器实例
             const browsers = await this.getBrowserInstances();
-            const llmSharedInstance = browsers.find(browser =>
-                browser.accountId === this.llmConfig.sharedInstanceId &&
-                browser.status === 'running'
+
+            // 2. 查找 group="LLM" 且状态为 running 的浏览器
+            const llmBrowser = browsers.find(browser =>
+                browser.group === 'LLM' && browser.status === 'running'
             );
 
-            if (llmSharedInstance) {
-                console.log(`✅ 找到LLM共享实例: ${llmSharedInstance.debugPort}`);
+            if (llmBrowser) {
+                console.log(`✅ 找到 LLM 专用浏览器: ${llmBrowser.accountId} (端口: ${llmBrowser.debugPort})`);
                 return {
-                    ...llmSharedInstance,
-                    originalAccountId: originalAccountId // 保留原始用户ID
-                };
-            }
-
-            // 2. 如果API没有找到，直接验证9712端口
-            console.log(`🔄 API未找到共享实例，直接验证端口 ${this.llmConfig.fixedPort}`);
-            const isPortValid = await this.validateDebugPort(this.llmConfig.fixedPort);
-
-            if (isPortValid) {
-                console.log(`✅ 端口 ${this.llmConfig.fixedPort} 验证成功，创建虚拟实例`);
-                return {
-                    accountId: this.llmConfig.sharedInstanceId,
-                    id: this.llmConfig.sharedInstanceId,
-                    debugPort: this.llmConfig.fixedPort,
-                    status: 'running',
-                    source: 'direct_port_detection',
+                    ...llmBrowser,
                     originalAccountId: originalAccountId,
-                    isSharedLLMInstance: true
+                    id: llmBrowser.accountId // 确保有 id 字段
                 };
             }
 
-            // 3. 如果9712端口不可用，抛出明确错误
-            throw new Error(`LLM共享浏览器实例不可用，请确保端口 ${this.llmConfig.fixedPort} 上有运行的Chrome实例`);
+            throw new Error('未找到运行中的 LLM 专用浏览器，请确保 group="LLM" 的浏览器正在运行');
 
         } catch (error) {
-            console.error(`❌ 获取LLM共享实例失败: ${error.message}`);
+            console.error(`❌ 获取 LLM 专用浏览器失败: ${error.message}`);
             throw error;
+        }
+    }
+
+    /**
+     * 智能获取最佳端口（主要方法）- 修复版本，支持LLM用户重定向
+     */
+    async getOptimalDebugPort(account) {
+        console.log(`🎯 为账号 ${account.id} 智能获取调试端口...`)
+
+        try {
+            // 🔧 LLM用户特殊处理
+            if (this.isLLMUser(account.id)) {
+                console.log(`🤖 LLM用户，直接返回固定端口: ${this.llmConfig.fixedPort}`);
+                const isValid = await this.validateDebugPort(this.llmConfig.fixedPort);
+                if (isValid) {
+                    return this.llmConfig.fixedPort;
+                } else {
+                    throw new Error(`LLM端口 ${this.llmConfig.fixedPort} 不可用`);
+                }
+            }
+
+            // 🔧 非LLM用户：原有逻辑
+            const isAvailable = await this.checkAvailability();
+
+            if (!isAvailable) {
+                console.log('⚠️ Electron API 不可用，使用默认端口范围')
+                return await this.fallbackPortDetection()
+            }
+
+            await this.refreshBrowserInstances()
+            const port = await this.getAvailableDebugPort(account.id)
+
+            console.log(`✅ 智能端口获取成功: ${port}`)
+            return port
+
+        } catch (error) {
+            console.log(`⚠️ 智能端口获取失败: ${error.message}，使用备用检测`)
+            return await this.fallbackPortDetection()
+        }
+    }
+
+    /**
+     * 获取调试信息 - 增强版本
+     */
+    async getDebugInfo() {
+        try {
+            const [healthStatus, browsers] = await Promise.all([
+                this.httpRequest('/api/health').catch(() => ({ available: false })),
+                this.getBrowserInstances().catch(() => [])
+            ])
+
+            // 🔧 增强：分析LLM浏览器状态
+            const llmBrowsers = browsers.filter(b => b.group === 'LLM');
+            const runningLLMBrowsers = llmBrowsers.filter(b => b.status === 'running');
+
+            return {
+                apiAvailable: !!healthStatus.success,
+                apiEndpoint: this.baseUrl,
+                browsersCount: browsers.length,
+                runningBrowsers: browsers.filter(b => b.status === 'running').length,
+                availablePorts: browsers
+                    .filter(b => b.debugPort)
+                    .map(b => ({
+                        accountId: b.accountId,
+                        port: b.debugPort,
+                        status: b.status,
+                        group: b.group || 'default'
+                    })),
+                // 🔧 新增：LLM相关详细信息
+                llm: {
+                    users: this.llmConfig.users,
+                    sharedInstanceId: this.llmConfig.sharedInstanceId,
+                    fixedPort: this.llmConfig.fixedPort,
+                    portAvailable: await this.validateDebugPort(this.llmConfig.fixedPort),
+                    // LLM浏览器状态
+                    llmBrowsersTotal: llmBrowsers.length,
+                    llmBrowsersRunning: runningLLMBrowsers.length,
+                    llmBrowserDetails: runningLLMBrowsers.map(b => ({
+                        accountId: b.accountId,
+                        name: b.name,
+                        debugPort: b.debugPort,
+                        tabsCount: b.tabsCount,
+                        url: b.url
+                    }))
+                }
+            }
+        } catch (error) {
+            return {
+                apiAvailable: false,
+                error: error.message
+            }
         }
     }
 
@@ -193,43 +273,6 @@ export class ElectronBrowserAPI {
         }
     }
 
-    /**
-     * 智能获取最佳端口（主要方法）- 支持LLM用户重定向
-     */
-    async getOptimalDebugPort(account) {
-        console.log(`🎯 为账号 ${account.id} 智能获取调试端口...`)
-
-        try {
-            // 🔧 LLM用户特殊处理
-            if (this.isLLMUser(account.id)) {
-                console.log(`🤖 LLM用户，直接返回固定端口: ${this.llmConfig.fixedPort}`);
-                const isValid = await this.validateDebugPort(this.llmConfig.fixedPort);
-                if (isValid) {
-                    return this.llmConfig.fixedPort;
-                } else {
-                    throw new Error(`LLM端口 ${this.llmConfig.fixedPort} 不可用`);
-                }
-            }
-
-            // 🔧 非LLM用户：原有逻辑
-            const isAvailable = await this.checkAvailability();
-
-            if (!isAvailable) {
-                console.log('⚠️ Electron API 不可用，使用默认端口范围')
-                return await this.fallbackPortDetection()
-            }
-
-            await this.refreshBrowserInstances()
-            const port = await this.getAvailableDebugPort(account.id)
-
-            console.log(`✅ 智能端口获取成功: ${port}`)
-            return port
-
-        } catch (error) {
-            console.log(`⚠️ 智能端口获取失败: ${error.message}，使用备用检测`)
-            return await this.fallbackPortDetection()
-        }
-    }
 
     /**
      * 获取可用的调试端口
@@ -319,39 +362,6 @@ export class ElectronBrowserAPI {
         }
     }
 
-    /**
-     * 获取调试信息
-     */
-    async getDebugInfo() {
-        try {
-            const [healthStatus, browsers] = await Promise.all([
-                this.httpRequest('/api/health').catch(() => ({ available: false })),
-                this.getBrowserInstances().catch(() => [])
-            ])
-
-            return {
-                apiAvailable: !!healthStatus.success,
-                apiEndpoint: this.baseUrl,
-                browsersCount: browsers.length,
-                runningBrowsers: browsers.filter(b => b.status === 'running').length,
-                availablePorts: browsers
-                    .filter(b => b.debugPort)
-                    .map(b => ({ accountId: b.accountId, port: b.debugPort, status: b.status })),
-                // 🔧 新增：LLM相关信息
-                llm: {
-                    users: this.llmConfig.users,
-                    sharedInstanceId: this.llmConfig.sharedInstanceId,
-                    fixedPort: this.llmConfig.fixedPort,
-                    portAvailable: await this.validateDebugPort(this.llmConfig.fixedPort)
-                }
-            }
-        } catch (error) {
-            return {
-                apiAvailable: false,
-                error: error.message
-            }
-        }
-    }
 
     /**
      * HTTP 请求工具方法
