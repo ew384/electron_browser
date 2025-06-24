@@ -47,6 +47,10 @@
 │   ├── test_douyin.sh
 │   ├── test-template.json
 │   ├── test_wechat.sh
+│   ├── types
+│   │   ├── claude-publisher.d.ts
+│   │   ├── llm-controller.d.ts
+│   │   └── llm-platforms.d.ts
 │   ├── utils
 │   │   ├── element-analyzer.js
 │   │   └── test-video-generator.js
@@ -64,6 +68,14 @@
 │   │   ├── http-api-server.ts
 │   │   ├── index.ts
 │   │   ├── ipc-handlers.ts
+│   │   ├── llm
+│   │   │   ├── llm-concurrency-manager.ts
+│   │   │   ├── llm-config.json
+│   │   │   ├── llm-config-manager.ts
+│   │   │   ├── llm-request-handler.ts
+│   │   │   ├── llm-session-mapper.ts
+│   │   │   ├── llm-user-manager.ts
+│   │   │   └── types.ts
 │   │   ├── platform-adapter.ts
 │   │   ├── storage
 │   │   │   └── account-storage.ts
@@ -93,6 +105,9 @@
 │   │   ├── constants.ts
 │   │   └── types.ts
 │   ├── tsconfig.json
+│   ├── tsconfig.json.backup
+│   ├── types
+│   │   └── automation.d.ts
 │   └── yarn.lock
 ├── LICENSE
 ├── llm_fastAPI
@@ -100,6 +115,7 @@
 ├── package.json
 ├── package-lock.json
 ├── README.md
+├── run_llm_service.sh
 ├── server
 │   ├── babel.config.js
 │   ├── jsconfig.json
@@ -361,4 +377,4 @@
 │   └── vue.config.js
 └── yarn.lock
 
-115 directories, 246 files
+118 directories, 259 files
