@@ -7,18 +7,123 @@ export class ElectronBrowserAPI {
         this.timeout = config.timeout || 5000
         this.retryAttempts = config.retryAttempts || 3
         this.retryDelay = config.retryDelay || 1000
+        // 🔧 新增：LLM用户和端口配置
+        this.llmConfig = {
+            users: ['test1', 'user_1', 'user_2'], // LLM用户列表
+            sharedInstanceId: 'llm_shared',             // LLM共享实例ID
+            fixedPort: 9712                             // LLM固定端口
+        }
+    }
+    /**
+    * 🔧 新增：判断是否为LLM用户
+    */
+    isLLMUser(accountId) {
+        return this.llmConfig.users.includes(accountId);
+    }
+    /**
+     * 获取特定账号的浏览器实例 - 分离式修复版本
+     */
+    async getBrowserInstanceByAccount(accountId) {
+        try {
+            console.log(`🔍 获取浏览器实例: ${accountId}`);
+
+            // 🔧 LLM用户特殊处理：重定向到共享实例
+            if (this.isLLMUser(accountId)) {
+                console.log(`🤖 检测到LLM用户: ${accountId}，使用共享实例`);
+                return await this.getLLMSharedBrowserInstance(accountId);
+            }
+
+            // 🔧 非LLM用户：使用原有逻辑
+            return await this.getRegularBrowserInstance(accountId);
+
+        } catch (error) {
+            console.error(`❌ 获取浏览器实例失败: ${error.message}`);
+            throw error;
+        }
     }
 
     /**
-     * 检查 Electron API 是否可用
+     * 🔧 新增：获取LLM共享浏览器实例
      */
-    async checkAvailability() {
+    async getLLMSharedBrowserInstance(originalAccountId) {
         try {
-            const response = await this.httpRequest('/api/health')
-            return response.success
+            console.log(`🤖 为用户 ${originalAccountId} 获取LLM共享实例`);
+
+            // 1. 尝试从API获取llm_shared实例
+            const browsers = await this.getBrowserInstances();
+            const llmSharedInstance = browsers.find(browser =>
+                browser.accountId === this.llmConfig.sharedInstanceId &&
+                browser.status === 'running'
+            );
+
+            if (llmSharedInstance) {
+                console.log(`✅ 找到LLM共享实例: ${llmSharedInstance.debugPort}`);
+                return {
+                    ...llmSharedInstance,
+                    originalAccountId: originalAccountId // 保留原始用户ID
+                };
+            }
+
+            // 2. 如果API没有找到，直接验证9712端口
+            console.log(`🔄 API未找到共享实例，直接验证端口 ${this.llmConfig.fixedPort}`);
+            const isPortValid = await this.validateDebugPort(this.llmConfig.fixedPort);
+
+            if (isPortValid) {
+                console.log(`✅ 端口 ${this.llmConfig.fixedPort} 验证成功，创建虚拟实例`);
+                return {
+                    accountId: this.llmConfig.sharedInstanceId,
+                    id: this.llmConfig.sharedInstanceId,
+                    debugPort: this.llmConfig.fixedPort,
+                    status: 'running',
+                    source: 'direct_port_detection',
+                    originalAccountId: originalAccountId,
+                    isSharedLLMInstance: true
+                };
+            }
+
+            // 3. 如果9712端口不可用，抛出明确错误
+            throw new Error(`LLM共享浏览器实例不可用，请确保端口 ${this.llmConfig.fixedPort} 上有运行的Chrome实例`);
+
         } catch (error) {
-            console.log(`⚠️ Electron API 不可用: ${error.message}`)
-            return false
+            console.error(`❌ 获取LLM共享实例失败: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * 🔧 新增：获取常规浏览器实例（原有逻辑）
+     */
+    async getRegularBrowserInstance(accountId) {
+        try {
+            console.log(`📱 获取常规浏览器实例: ${accountId}`);
+
+            // 原有的获取逻辑
+            const browsers = await this.getBrowserInstances();
+
+            // 优先查找精确匹配的账号ID
+            let targetBrowser = browsers.find(browser =>
+                browser.accountId === accountId || browser.id === accountId
+            );
+
+            if (targetBrowser) {
+                console.log(`✅ 找到账号 ${accountId} 的浏览器实例，端口: ${targetBrowser.debugPort}`);
+                return targetBrowser;
+            }
+
+            // 如果没找到精确匹配，查找运行中的实例
+            const runningBrowsers = browsers.filter(browser => browser.status === 'running');
+
+            if (runningBrowsers.length > 0) {
+                targetBrowser = runningBrowsers[0];
+                console.log(`⚠️ 未找到账号 ${accountId} 的专用实例，使用运行中的实例: ${targetBrowser.debugPort}`);
+                return targetBrowser;
+            }
+
+            throw new Error(`未找到账号 ${accountId} 的浏览器实例，且没有其他运行中的实例`);
+
+        } catch (error) {
+            console.error(`❌ 获取常规浏览器实例失败:`, error.message);
+            throw error;
         }
     }
 
@@ -43,36 +148,62 @@ export class ElectronBrowserAPI {
     }
 
     /**
-     * 获取特定账号的浏览器实例
+     * 验证调试端口是否可用
      */
-    async getBrowserInstanceByAccount(accountId) {
+    async validateDebugPort(port) {
         try {
-            const browsers = await this.getBrowserInstances()
+            const response = await fetch(`http://localhost:${port}/json/version`, {
+                method: 'GET',
+                timeout: 3000
+            })
 
-            // 优先查找精确匹配的账号ID
-            let targetBrowser = browsers.find(browser =>
-                browser.accountId === accountId || browser.id === accountId
-            )
+            if (response.ok) {
+                const version = await response.json()
+                console.log(`🔍 端口 ${port} 验证成功: ${version.Browser}`)
+                return true
+            }
+            return false
+        } catch (error) {
+            console.log(`🔍 端口 ${port} 验证失败: ${error.message}`)
+            return false
+        }
+    }
 
-            if (targetBrowser) {
-                console.log(`✅ 找到账号 ${accountId} 的浏览器实例，端口: ${targetBrowser.debugPort}`)
-                return targetBrowser
+    /**
+     * 智能获取最佳端口（主要方法）- 支持LLM用户重定向
+     */
+    async getOptimalDebugPort(account) {
+        console.log(`🎯 为账号 ${account.id} 智能获取调试端口...`)
+
+        try {
+            // 🔧 LLM用户特殊处理
+            if (this.isLLMUser(account.id)) {
+                console.log(`🤖 LLM用户，直接返回固定端口: ${this.llmConfig.fixedPort}`);
+                const isValid = await this.validateDebugPort(this.llmConfig.fixedPort);
+                if (isValid) {
+                    return this.llmConfig.fixedPort;
+                } else {
+                    throw new Error(`LLM端口 ${this.llmConfig.fixedPort} 不可用`);
+                }
             }
 
-            // 如果没找到精确匹配，查找运行中的实例
-            const runningBrowsers = browsers.filter(browser => browser.status === 'running')
+            // 🔧 非LLM用户：原有逻辑
+            const isAvailable = await this.checkAvailability();
 
-            if (runningBrowsers.length > 0) {
-                targetBrowser = runningBrowsers[0]
-                console.log(`⚠️ 未找到账号 ${accountId} 的专用实例，使用运行中的实例: ${targetBrowser.debugPort}`)
-                return targetBrowser
+            if (!isAvailable) {
+                console.log('⚠️ Electron API 不可用，使用默认端口范围')
+                return await this.fallbackPortDetection()
             }
 
-            throw new Error(`未找到账号 ${accountId} 的浏览器实例，且没有其他运行中的实例`)
+            await this.refreshBrowserInstances()
+            const port = await this.getAvailableDebugPort(account.id)
+
+            console.log(`✅ 智能端口获取成功: ${port}`)
+            return port
 
         } catch (error) {
-            console.error(`❌ 获取账号 ${accountId} 的浏览器实例失败:`, error.message)
-            throw error
+            console.log(`⚠️ 智能端口获取失败: ${error.message}，使用备用检测`)
+            return await this.fallbackPortDetection()
         }
     }
 
@@ -81,10 +212,9 @@ export class ElectronBrowserAPI {
      */
     async getAvailableDebugPort(accountId) {
         try {
-            const browserInstance = await this.getBrowserInstanceByAccount(accountId)
+            const browserInstance = await this.getRegularBrowserInstance(accountId)
 
             if (browserInstance && browserInstance.debugPort) {
-                // 验证端口是否真的可用
                 const isValid = await this.validateDebugPort(browserInstance.debugPort)
 
                 if (isValid) {
@@ -118,42 +248,37 @@ export class ElectronBrowserAPI {
     }
 
     /**
-     * 验证调试端口是否可用
+     * 备用端口检测（当API不可用时）
      */
-    async validateDebugPort(port) {
-        try {
-            const response = await fetch(`http://localhost:${port}/json/version`, {
-                method: 'GET',
-                timeout: 3000
-            })
+    async fallbackPortDetection() {
+        console.log('🔍 执行备用端口检测...')
 
-            if (response.ok) {
-                const version = await response.json()
-                console.log(`🔍 端口 ${port} 验证成功: ${version.Browser}`)
-                return true
+        // 检测常用端口范围：9711-9720（不包括9712，因为那是LLM专用）
+        const portRange = [9711, 9713, 9714, 9715, 9716, 9717, 9718, 9719, 9720]
+
+        for (const port of portRange) {
+            const isValid = await this.validateDebugPort(port)
+            if (isValid) {
+                console.log(`✅ 备用检测找到可用端口: ${port}`)
+                return port
             }
-            return false
-        } catch (error) {
-            console.log(`🔍 端口 ${port} 验证失败: ${error.message}`)
-            return false
         }
+
+        // 如果都不可用，返回默认端口
+        console.log('⚠️ 未找到可用端口，返回默认端口 9711')
+        return 9711
     }
 
     /**
-     * 获取浏览器实例的标签页
+     * 检查 Electron API 是否可用
      */
-    async getBrowserTabs(accountId) {
+    async checkAvailability() {
         try {
-            const response = await this.httpRequest(`/api/browser/${accountId}/tabs`)
-
-            if (response.success) {
-                return response.tabs
-            } else {
-                throw new Error(response.error || '获取标签页失败')
-            }
+            const response = await this.httpRequest('/api/health')
+            return response.success
         } catch (error) {
-            console.error(`❌ 获取浏览器标签页失败:`, error.message)
-            throw error
+            console.log(`⚠️ Electron API 不可用: ${error.message}`)
+            return false
         }
     }
 
@@ -171,55 +296,37 @@ export class ElectronBrowserAPI {
     }
 
     /**
-     * 智能获取最佳端口（主要方法）
+     * 获取调试信息
      */
-    async getOptimalDebugPort(account) {
-        console.log(`🎯 为账号 ${account.id} 智能获取调试端口...`)
-
+    async getDebugInfo() {
         try {
-            // 1. 检查 Electron API 是否可用
-            const isAvailable = await this.checkAvailability()
+            const [healthStatus, browsers] = await Promise.all([
+                this.httpRequest('/api/health').catch(() => ({ available: false })),
+                this.getBrowserInstances().catch(() => [])
+            ])
 
-            if (!isAvailable) {
-                console.log('⚠️ Electron API 不可用，使用默认端口范围')
-                return await this.fallbackPortDetection()
+            return {
+                apiAvailable: !!healthStatus.success,
+                apiEndpoint: this.baseUrl,
+                browsersCount: browsers.length,
+                runningBrowsers: browsers.filter(b => b.status === 'running').length,
+                availablePorts: browsers
+                    .filter(b => b.debugPort)
+                    .map(b => ({ accountId: b.accountId, port: b.debugPort, status: b.status })),
+                // 🔧 新增：LLM相关信息
+                llm: {
+                    users: this.llmConfig.users,
+                    sharedInstanceId: this.llmConfig.sharedInstanceId,
+                    fixedPort: this.llmConfig.fixedPort,
+                    portAvailable: await this.validateDebugPort(this.llmConfig.fixedPort)
+                }
             }
-
-            // 2. 尝试刷新实例状态
-            await this.refreshBrowserInstances()
-
-            // 3. 获取账号特定的端口
-            const port = await this.getAvailableDebugPort(account.id)
-
-            console.log(`✅ 智能端口获取成功: ${port}`)
-            return port
-
         } catch (error) {
-            console.log(`⚠️ 智能端口获取失败: ${error.message}，使用备用检测`)
-            return await this.fallbackPortDetection()
-        }
-    }
-
-    /**
-     * 备用端口检测（当API不可用时）
-     */
-    async fallbackPortDetection() {
-        console.log('🔍 执行备用端口检测...')
-
-        // 检测常用端口范围：9711-9720
-        const portRange = Array.from({ length: 10 }, (_, i) => 9711 + i)
-
-        for (const port of portRange) {
-            const isValid = await this.validateDebugPort(port)
-            if (isValid) {
-                console.log(`✅ 备用检测找到可用端口: ${port}`)
-                return port
+            return {
+                apiAvailable: false,
+                error: error.message
             }
         }
-
-        // 如果都不可用，返回默认端口
-        console.log('⚠️ 未找到可用端口，返回默认端口 9711')
-        return 9711
     }
 
     /**
@@ -268,32 +375,5 @@ export class ElectronBrowserAPI {
      */
     async delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms))
-    }
-
-    /**
-     * 获取调试信息
-     */
-    async getDebugInfo() {
-        try {
-            const [healthStatus, browsers] = await Promise.all([
-                this.httpRequest('/api/health').catch(() => ({ available: false })),
-                this.getBrowserInstances().catch(() => [])
-            ])
-
-            return {
-                apiAvailable: !!healthStatus.success,
-                apiEndpoint: this.baseUrl,
-                browsersCount: browsers.length,
-                runningBrowsers: browsers.filter(b => b.status === 'running').length,
-                availablePorts: browsers
-                    .filter(b => b.debugPort)
-                    .map(b => ({ accountId: b.accountId, port: b.debugPort, status: b.status }))
-            }
-        } catch (error) {
-            return {
-                apiAvailable: false,
-                error: error.message
-            }
-        }
     }
 }
