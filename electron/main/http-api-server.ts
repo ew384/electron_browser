@@ -4,6 +4,7 @@ import * as url from 'url';
 import { WindowManager } from './window-manager';
 import { AccountStorage } from './storage/account-storage';
 import { PlatformAdapter } from './platform-adapter';
+import { LLMRequestHandler } from './llm/llm-request-handler';
 
 interface BrowserInfo {
     id: string;
@@ -27,7 +28,7 @@ export class HttpApiServer {
     private accountStorage: AccountStorage;
     private platformAdapter: PlatformAdapter;
     private commandIdCounter: number = 1; // 🔧 新增：命令ID计数器
-
+    private llmHandler: LLMRequestHandler;
     // 🔧 新增：标签页会话缓存
     private tabSessions: Map<string, {
         accountId: string;
@@ -41,6 +42,7 @@ export class HttpApiServer {
         this.windowManager = windowManager;
         this.accountStorage = accountStorage;
         this.platformAdapter = PlatformAdapter.getInstance();
+        this.llmHandler = new LLMRequestHandler(windowManager, accountStorage);
     }
 
     async start(): Promise<void> {
@@ -80,6 +82,14 @@ export class HttpApiServer {
             if (this.server) {
                 this.server.close(() => {
                     console.log('[HttpApiServer] 📤 HTTP API Server stopped');
+                    // 🔧 新增：清理LLM资源
+                    try {
+                        this.llmHandler.cleanup();
+                        console.log('[HttpApiServer] 🧹 LLM资源已清理');
+                    } catch (error) {
+                        console.warn('[HttpApiServer] ⚠️ LLM资源清理失败:', error);
+                    }
+
                     resolve();
                 });
             } else {
@@ -105,7 +115,10 @@ export class HttpApiServer {
 
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Access-Control-Allow-Origin', '*');
-
+            if (pathname?.startsWith('/api/llm/')) {
+                await this.llmHandler.handleRequest(req, res);
+                return;
+            }
             // 路由处理（保持原有逻辑）
             if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+\/execute-script$/)) {
                 const pathParts = pathname.split('/');
@@ -811,6 +824,22 @@ export class HttpApiServer {
     private async handleHealthCheck(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
         const platformConfig = this.platformAdapter.getConfig();
 
+        // 🔧 新增：获取LLM状态
+        let llmStatus = null;
+        try {
+            const serviceStatus = this.llmHandler.getServiceStatus();
+            llmStatus = {
+                available: serviceStatus.initialized,
+                components: serviceStatus.components,
+                providers: ['claude'], // 从配置获取
+                gateway: 'integrated'
+            };
+        } catch (error) {
+            llmStatus = {
+                available: false,
+                error: error instanceof Error ? error.message : String(error)
+            };
+        }
         res.writeHead(200);
         res.end(JSON.stringify({
             success: true,
@@ -833,8 +862,10 @@ export class HttpApiServer {
                 concurrentOperations: true,
                 legacyCompatibility: true,
                 platformOptimized: true,
+                llmGateway: true, // 🔧 新增
                 ...platformConfig.features
-            }
+            },
+            llm: llmStatus // 🔧 新增LLM状态
         }));
     }
 

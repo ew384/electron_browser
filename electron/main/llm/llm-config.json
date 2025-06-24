@@ -1,0 +1,37 @@
+{
+    "_comment": "LLM Gateway 配置文件 - 可选，如不存在则使用默认配置",
+    "concurrency": {
+        "defaultMaxSessions": 2,
+        "userLimits": {
+            "test1": 3,
+            "user_1": 2,
+            "user_2": 2,
+            "llm_admin_123": 5,
+            "dev_user_456": 1
+        },
+        "enableConcurrencyControl": true
+    },
+    "apiKey": {
+        "validation": {
+            "minLength": 8,
+            "requiredPrefixes": [
+                "llm_",
+                "dev_",
+                "prod_"
+            ],
+            "allowedPatterns": [
+                "^[a-zA-Z0-9_-]+$"
+            ]
+        },
+        "predefinedUsers": [
+            "test1",
+            "user_1",
+            "user_2"
+        ]
+    },
+    "features": {
+        "enableUsageLogging": true,
+        "enableRateLimiting": false,
+        "sessionTimeout": 60
+    }
+}
