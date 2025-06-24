@@ -26,14 +26,38 @@ export class ElectronBrowserAPI {
     async getBrowserInstanceByAccount(accountId) {
         try {
             console.log(`🔍 获取浏览器实例: ${accountId}`);
-
-            // 🔧 LLM用户特殊处理：重定向到共享实例
+            console.log(`🔍 [DEBUG] llmConfig.users:`, this.llmConfig.users);
+            console.log(`🔍 [DEBUG] isLLMUser(${accountId}) = ${this.isLLMUser(accountId)}`);
+            // 🔧 LLM 用户特殊处理：映射到 LLM 专用浏览器
             if (this.isLLMUser(accountId)) {
-                console.log(`🤖 检测到LLM用户: ${accountId}，使用共享实例`);
-                return await this.getLLMSharedBrowserInstance(accountId);
+                console.log(`🤖 检测到LLM用户: ${accountId}，使用 LLM 专用浏览器`);
+
+                // 获取所有浏览器实例
+                const browsers = await this.getBrowserInstances();
+
+                // 查找 group="LLM" 且状态为 running 的浏览器
+                const llmBrowser = browsers.find(browser =>
+                    browser.group === 'LLM' && browser.status === 'running'
+                );
+
+                if (llmBrowser) {
+                    console.log(`✅ 找到 LLM 专用浏览器: ${llmBrowser.accountId} (端口: ${llmBrowser.debugPort})`);
+
+                    // 🔧 关键：返回时保持原始 accountId，但使用真实浏览器的信息
+                    return {
+                        accountId: llmBrowser.accountId,    // 真实浏览器账号（用于 API 调用）
+                        id: llmBrowser.accountId,           // 兼容性
+                        debugPort: llmBrowser.debugPort,
+                        status: llmBrowser.status,
+                        originalLLMUser: accountId,         // 保留原始 LLM 用户信息
+                        isLLMSharedInstance: true
+                    };
+                }
+
+                throw new Error(`LLM 专用浏览器未运行，请确保 group="LLM" 的浏览器正在运行`);
             }
 
-            // 🔧 非LLM用户：使用原有逻辑
+            // 🔧 非LLM用户：使用原有逻辑（不变）
             return await this.getRegularBrowserInstance(accountId);
 
         } catch (error) {
@@ -375,5 +399,36 @@ export class ElectronBrowserAPI {
      */
     async delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms))
+    }
+    /**
+     * 🔧 新增：获取LLM专用浏览器实例
+     */
+    async getLLMBrowserInstance(originalAccountId) {
+        try {
+            console.log(`🤖 为用户 ${originalAccountId} 查找 LLM 专用浏览器`);
+
+            // 1. 获取所有浏览器实例
+            const browsers = await this.getBrowserInstances();
+
+            // 2. 查找 group="LLM" 且状态为 running 的浏览器
+            const llmBrowser = browsers.find(browser =>
+                browser.group === 'LLM' && browser.status === 'running'
+            );
+
+            if (llmBrowser) {
+                console.log(`✅ 找到 LLM 专用浏览器: ${llmBrowser.accountId} (端口: ${llmBrowser.debugPort})`);
+                return {
+                    ...llmBrowser,
+                    originalAccountId: originalAccountId,
+                    id: llmBrowser.accountId // 确保有 id 字段
+                };
+            }
+
+            throw new Error('未找到运行中的 LLM 专用浏览器，请确保 group="LLM" 的浏览器正在运行');
+
+        } catch (error) {
+            console.error(`❌ 获取 LLM 专用浏览器失败: ${error.message}`);
+            throw error;
+        }
     }
 }

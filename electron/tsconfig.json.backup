@@ -34,12 +34,10 @@
     },
     "allowJs": true,
     "noImplicitAny": false,
-    "noImplicitReturns": false,
-    "noImplicitOverride": false
+    "suppressImplicitAnyIndexErrors": true
   },
   "include": [
-    "**/*.ts",
-    "types/**/*.d.ts"
+    "**/*.ts"
   ],
   "exclude": [
     "node_modules",

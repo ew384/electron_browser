@@ -33,12 +33,12 @@ export class WindowManager {
           'User-Agent': 'Mozilla/5.0 (compatible; WindowManager/1.0)'
         }
       });
-      
+
       clearTimeout(timeoutId);
       return response;
     } catch (error: any) {
       clearTimeout(timeoutId);
-      
+
       if (error.name === 'AbortError') {
         throw new Error(`Request timeout after ${timeoutMs}ms`);
       }
@@ -48,7 +48,7 @@ export class WindowManager {
   private async isPortAvailable(port: number): Promise<boolean> {
     const checkIPv4 = () => new Promise<boolean>((resolve) => {
       const server = net.createServer();
-      
+
       server.listen(port, '127.0.0.1', () => {
         server.close(() => {
           console.log(`[WindowManager] IPv4 端口 ${port} 可用`);
@@ -69,7 +69,7 @@ export class WindowManager {
 
     const checkIPv6 = () => new Promise<boolean>((resolve) => {
       const server = net.createServer();
-      
+
       server.listen(port, '::1', () => {
         server.close(() => {
           console.log(`[WindowManager] IPv6 端口 ${port} 可用`);
@@ -95,13 +95,13 @@ export class WindowManager {
 
     const isAvailable = ipv4Available && ipv6Available;
     console.log(`[WindowManager] 端口 ${port} 检查结果: IPv4=${ipv4Available}, IPv6=${ipv6Available}, 总体=${isAvailable}`);
-    
+
     return isAvailable;
   }
-    private async isPortUsedByChrome(port: number): Promise<boolean> {
+  private async isPortUsedByChrome(port: number): Promise<boolean> {
     try {
       const response = await this.fetchWithTimeout(`http://localhost:${port}/json/version`, 2000);
-      
+
       if (response.ok) {
         const data = await response.json();
         console.log(`[WindowManager] 端口 ${port} 已被Chrome占用:`, data.Browser);
@@ -113,11 +113,11 @@ export class WindowManager {
         console.log(`[WindowManager] 端口 ${port} 检查超时`);
       }
     }
-    
+
     return false;
   }
   // 🔧 新增：找到可用的调试端口
-    private async findAvailableDebugPort(): Promise<number> {
+  private async findAvailableDebugPort(): Promise<number> {
     const maxAttempts = 100;
 
     for (let i = 0; i < maxAttempts; i++) {
@@ -203,7 +203,7 @@ export class WindowManager {
   private async launchRealChrome(accountId: string, fingerprintConfig: FingerprintConfig, config: AccountConfig) {
     const userDataDir = path.join(os.tmpdir(), 'chrome-profiles', accountId);
     const debugPort = await this.findAvailableDebugPort();
-    
+
     if (!fs.existsSync(userDataDir)) {
       fs.mkdirSync(userDataDir, { recursive: true });
     }
@@ -284,15 +284,15 @@ export class WindowManager {
 
     while (Date.now() - startTime < timeout) {
       try {
-        const response = await this.fetchWithTimeout(`http://127.0.0.1:${port}/json/version`, 3000);
-        
+        const response = await this.fetchWithTimeout(`http://127.0.0.1:${port}/json/version`, 4000);
+
         if (response.ok) {
           const data = await response.json();
           console.log(`[WindowManager] ✅ Chrome就绪 - 账号: ${accountId}, 端口: ${port}, 版本: ${data.Browser}`);
-          
+
           // 验证调试端口独占性
           try {
-            const pagesResponse = await this.fetchWithTimeout(`http://127.0.0.1:${port}/json`, 3000);
+            const pagesResponse = await this.fetchWithTimeout(`http://127.0.0.1:${port}/json`, 4000);
             if (pagesResponse.ok) {
               const pagesData = await pagesResponse.json();
               console.log(`[WindowManager] 📄 活动页面数: ${pagesData.length}`);
@@ -300,14 +300,14 @@ export class WindowManager {
           } catch (error) {
             console.warn(`[WindowManager] 获取页面信息失败:`, error);
           }
-          
+
           return;
         } else {
           lastError = `HTTP ${response.status}`;
         }
       } catch (error: any) {
         lastError = error.message;
-        
+
         if (error.message.includes('ECONNREFUSED')) {
           // Chrome还在启动，继续等待
         } else if (error.message.includes('timeout')) {
@@ -317,12 +317,12 @@ export class WindowManager {
         }
       }
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     console.error(`[WindowManager] ❌ Chrome启动超时 - 账号: ${accountId}, 端口: ${port}`);
     console.error(`[WindowManager] 最后错误: ${lastError}`);
-    
+
     try {
       const isUsed = await this.isPortUsedByChrome(port);
       console.error(`[WindowManager] 端口 ${port} Chrome状态: ${isUsed ? '被占用' : '未被占用'}`);

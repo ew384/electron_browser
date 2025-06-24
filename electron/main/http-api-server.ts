@@ -118,6 +118,16 @@ export class HttpApiServer {
             if (pathname?.startsWith('/api/llm/')) {
                 await this.llmHandler.handleRequest(req, res);
                 return;
+            } else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs$/)) {
+                const pathParts = pathname.split('/');
+                const accountId = pathParts[3];
+                await this.handleCreateTab(req, res, accountId);
+            }
+            // 🔧 新增：获取标签页列表路由  
+            else if (method === 'GET' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs$/)) {
+                const pathParts = pathname.split('/');
+                const accountId = pathParts[3];
+                await this.handleGetTabs(req, res, accountId);
             }
             // 路由处理（保持原有逻辑）
             if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+\/execute-script$/)) {
@@ -825,7 +835,7 @@ export class HttpApiServer {
         const platformConfig = this.platformAdapter.getConfig();
 
         // 🔧 新增：获取LLM状态
-        let llmStatus = null;
+        let llmStatus: any = null;
         try {
             const serviceStatus = this.llmHandler.getServiceStatus();
             llmStatus = {

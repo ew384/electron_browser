@@ -1,4 +1,4 @@
-// electron/main/llm/llm-session-mapper.ts
+// electron/main/llm/llm-session-mapper.ts - 修复版本
 import { LLMChatRequest, LLMChatResponse } from './types';
 
 interface LLMController {
@@ -6,8 +6,16 @@ interface LLMController {
     createLLMSession(apiKey: string, provider: string): Promise<any>;
 }
 
+// Claude 发布器类型声明
+interface ClaudePublisher {
+    new(session: any, llmController: any): {
+        sendMessage(prompt: string, files?: string[], newChat?: boolean, stream?: boolean): Promise<any>;
+        handleChatStream(prompt: string, files?: string[], stream?: boolean, newChat?: boolean): AsyncGenerator<any>;
+    };
+}
+
 export class LLMSessionMapper {
-    private publisherCache = new Map<string, any>();
+    private publisherCache = new Map<string, ClaudePublisher>();
 
     constructor(private llmController: LLMController) { }
 
@@ -31,8 +39,8 @@ export class LLMSessionMapper {
             // 创建发布器实例并发送消息
             const publisher = new PublisherClass(session, this.llmController);
             const result = await publisher.sendMessage(
-                options.prompt,
-                options.files,
+                options.prompt || '',    // ✅ 确保是 string
+                options.files || [],     // ✅ 确保是 string[]
                 options.newChat,
                 false // 非流式
             );
@@ -76,15 +84,17 @@ export class LLMSessionMapper {
             if (!PublisherClass) {
                 throw new Error(`Unsupported LLM provider: ${provider}`);
             }
-
+            const prompt = options.prompt || '';  // ✅ 添加这行
+            const files = options.files || [];    // ✅ 添加这行
+            const newChat = options.newChat || false; // ✅ 添加这行
             // 创建发布器实例并处理流式响应
             const publisher = new PublisherClass(session, this.llmController);
 
             for await (const chunk of publisher.handleChatStream(
-                options.prompt,
-                options.files,
+                prompt,
+                files,
                 true, // 流式
-                options.newChat
+                newChat
             )) {
                 yield chunk;
             }
@@ -135,21 +145,20 @@ export class LLMSessionMapper {
     }
 
     /**
-     * 获取发布器类
+     * 获取发布器类 - 修复版本，增强错误处理
      */
-    private async getPublisherClass(provider: string): Promise<any> {
+    private async getPublisherClass(provider: string): Promise<ClaudePublisher | null> {
         // 检查缓存
         if (this.publisherCache.has(provider)) {
-            return this.publisherCache.get(provider);
+            return this.publisherCache.get(provider) || null;
         }
 
         try {
-            let PublisherClass;
+            let PublisherClass: ClaudePublisher | null = null;
 
             switch (provider) {
                 case 'claude':
-                    const claudeModule = await import('../../../automation/engines/llm-publishers/claude-llm-publisher.js');
-                    PublisherClass = claudeModule.ClaudeLLMPublisher;
+                    PublisherClass = await this.importClaudePublisher();
                     break;
 
                 // 将来可以添加其他提供商
@@ -178,6 +187,65 @@ export class LLMSessionMapper {
             console.error(`[LLM SessionMapper] 加载发布器失败 ${provider}:`, error);
             return null;
         }
+    }
+
+    /**
+     * 安全导入 Claude 发布器
+     */
+    private async importClaudePublisher(): Promise<ClaudePublisher | null> {
+        const possiblePaths = [
+            '../../../../../../automation/engines/llm-publishers/claude-llm-publisher.js',
+            '../../../automation/engines/llm-publishers/claude-llm-publisher.mjs',
+            '../../../../automation/engines/llm-publishers/claude-llm-publisher.js'
+        ];
+
+        for (const modulePath of possiblePaths) {
+            try {
+                console.log(`[LLM SessionMapper] 尝试导入 Claude 发布器: ${modulePath}`);
+                const claudeModule = await import(modulePath);
+
+                if (claudeModule && claudeModule.ClaudeLLMPublisher) {
+                    console.log(`[LLM SessionMapper] 成功导入 Claude 发布器: ${modulePath}`);
+                    return claudeModule.ClaudeLLMPublisher as ClaudePublisher;
+                } else {
+                    console.warn(`[LLM SessionMapper] Claude 发布器类未找到: ${modulePath}`);
+                }
+            } catch (error) {
+                console.warn(`[LLM SessionMapper] Claude 发布器导入失败 ${modulePath}:`,
+                    error instanceof Error ? error.message : String(error));
+                continue;
+            }
+        }
+
+        // 如果所有路径都失败，返回模拟的发布器
+        console.warn('[LLM SessionMapper] 所有 Claude 发布器导入路径失败，使用模拟发布器');
+        return this.getMockClaudePublisher();
+    }
+
+    /**
+     * 获取模拟的 Claude 发布器（降级方案）
+     */
+    private getMockClaudePublisher(): ClaudePublisher {
+        return class MockClaudePublisher {
+            constructor(session: any, llmController: any) {
+                console.warn('[Mock Claude Publisher] 使用模拟发布器，功能受限');
+            }
+
+            async sendMessage(prompt: string, files?: string[], newChat?: boolean, stream?: boolean): Promise<any> {
+                return {
+                    success: false,
+                    error: 'Claude 发布器不可用，请检查模块路径'
+                };
+            }
+
+            async* handleChatStream(prompt: string, files?: string[], stream?: boolean, newChat?: boolean): AsyncGenerator<any> {
+                yield {
+                    type: 'error',
+                    error: 'Claude 发布器不可用，请检查模块路径',
+                    provider: 'claude'
+                };
+            }
+        } as ClaudePublisher;
     }
 
     /**
@@ -228,10 +296,12 @@ export class LLMSessionMapper {
     getCacheStatus(): {
         cachedProviders: string[];
         cacheSize: number;
+        loadedSuccessfully: boolean;
     } {
         return {
             cachedProviders: Array.from(this.publisherCache.keys()),
-            cacheSize: this.publisherCache.size
+            cacheSize: this.publisherCache.size,
+            loadedSuccessfully: this.publisherCache.size > 0
         };
     }
 }

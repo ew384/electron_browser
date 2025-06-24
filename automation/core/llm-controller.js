@@ -65,14 +65,17 @@ export class LLMController {
 
             // 获取可用的浏览器实例
             const browserInstance = await this.electronAPI.getBrowserInstanceByAccount(apiKey);
+            // 添加调试日志
+            console.log('🔍 [DEBUG] browserInstance:', browserInstance);
+            console.log('🔍 [DEBUG] browserInstance.accountId:', browserInstance.accountId);
             if (!browserInstance || browserInstance.status !== 'running') {
                 throw new Error(`API密钥 ${apiKey} 的浏览器实例未运行`);
             }
 
             // 为LLM创建专用标签页
-            const chatUrl = getLLMPlatformUrl(provider, 'chat');
-            const tabResponse = await this.createLLMTab(apiKey, provider, chatUrl);
-
+            const chatUrl = getLLMPlatformUrl(provider, 'chat') + `?user=${apiKey}`;
+            const realAccountId = browserInstance.accountId;  // 确保有这个变量
+            const tabResponse = await this.createLLMTab(realAccountId, provider, chatUrl);
             if (!tabResponse.success) {
                 throw new Error(`创建LLM标签页失败: ${tabResponse.error}`);
             }
@@ -126,7 +129,8 @@ export class LLMController {
                     body: JSON.stringify({
                         url: url,
                         platform: provider,
-                        type: 'llm'
+                        type: 'llm',
+                        forceNew: true
                     })
                 }
             );
