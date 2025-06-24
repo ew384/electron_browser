@@ -623,116 +623,249 @@ export class ClaudeLLMPublisher {
         }
     }
 
-    // ==================== 内容提取 ====================
-
     /**
-     * 提取页面完整内容
-     * @returns {Object} 提取的内容
+     * 提取页面完整内容 - 最终修复版本
+     * 基于Chrome Console测试成功的逻辑
      */
     async extractPageContent() {
         try {
             console.log('[Claude] 开始提取页面内容...');
 
-            // 🔧 从配置中获取选择器
-            const mainContentSelector = this.selectors.mainContentArea;
-            const userMessageSelector = this.selectors.userMessage;
-            const assistantMessageSelector = this.selectors.assistantMessage;
-            const responseTextSelector = this.selectors.responseText;
-            const codeBlockSelector = this.selectors.codeBlocks;
-            const codeBlockContainerSelector = this.selectors.codeBlockContainer;
-            const codeVersionSelector = this.selectors.codeVersionButtons;
-            const artifactSelector = this.selectors.artifactButtons;
-            const documentSelector = this.selectors.documentButtons;
+            // 最终修复版内容提取脚本
             const contentScript = `
                 (function() {
                     try {
-                        // 使用配置中的选择器
-                        const mainContentArea = document.querySelector('${mainContentSelector}');
-                        if (!mainContentArea) {
-                            return { error: "无法找到主要内容区域" };
+                        // 🔧 修复后的内容提取函数
+                        function extractResponseContentInOrder(element) {
+                            const contentBlocks = [];
+                            const seenCodeTexts = new Set(); // 用于代码去重
+                            
+                            // 🔧 关键修复：找到实际的内容容器
+                            const contentArea = element.querySelector('.font-claude-message');
+                            if (!contentArea) return contentBlocks;
+                            
+                            // 🔧 关键修复：找到网格容器
+                            const gridContainer = contentArea.querySelector('div[class*="grid-cols-1"]');
+                            if (!gridContainer) {
+                                console.log('未找到网格容器，尝试直接从contentArea提取');
+                                return extractFromDirectChildren(contentArea, seenCodeTexts);
+                            }
+                            
+                            console.log(\`找到网格容器，包含 \${gridContainer.children.length} 个子元素\`);
+                            
+                            // 🔧 按顺序遍历网格容器的所有子元素
+                            Array.from(gridContainer.children).forEach((child, index) => {
+                                console.log(\`处理网格子元素 \${index}: \${child.tagName}\`);
+                                
+                                if (child.tagName === 'P' && child.classList.contains('whitespace-normal')) {
+                                    // 这是文本段落
+                                    const text = child.textContent.trim();
+                                    if (text) {
+                                        contentBlocks.push({
+                                            type: 'text',
+                                            text: text
+                                        });
+                                        console.log(\`  ✅ 添加文本: \${text.substring(0, 50)}...\`);
+                                    }
+                                } else if (child.tagName === 'PRE') {
+                                    // 这是代码块
+                                    // 获取代码语言
+                                    let language = '';
+                                    const codeElement = child.querySelector('code');
+                                    if (codeElement && codeElement.className) {
+                                        const match = codeElement.className.match(/language-([a-zA-Z0-9]+)/);
+                                        if (match) {
+                                            language = match[1];
+                                        }
+                                    }
+                                    
+                                    // 获取并清理代码文本
+                                    let rawCodeText = child.textContent || "";
+                                    let cleanCodeText = rawCodeText;
+                                    
+                                    // 移除 Copy 后缀
+                                    cleanCodeText = cleanCodeText.replace(/Copy$/i, '').trim();
+                                    
+                                    // 🔧 关键修复：移除语言标签前缀
+                                    if (language) {
+                                        const languagePrefix = new RegExp(\`^\${language}\\\\s*\`, 'i');
+                                        cleanCodeText = cleanCodeText.replace(languagePrefix, '');
+                                    }
+                                    
+                                    // 🔧 去重检查（只去除完全相同的代码）
+                                    if (cleanCodeText.trim() && !seenCodeTexts.has(cleanCodeText)) {
+                                        seenCodeTexts.add(cleanCodeText);
+                                        
+                                        contentBlocks.push({
+                                            type: 'code',
+                                            language: language || 'text',
+                                            code: cleanCodeText
+                                        });
+                                        
+                                        console.log(\`  ✅ 添加代码(\${language}): \${cleanCodeText.substring(0, 50)}...\`);
+                                    } else {
+                                        console.log(\`  ⚠️ 跳过重复代码块: \${cleanCodeText.substring(0, 30)}...\`);
+                                    }
+                                } else {
+                                    console.log(\`  ❓ 跳过未知元素类型: \${child.tagName}\`);
+                                }
+                            });
+                            
+                            return contentBlocks;
                         }
                         
-                        const conversationElements = Array.from(mainContentArea.children);
+                        // 🔧 备用提取函数（如果找不到网格容器）
+                        function extractFromDirectChildren(contentArea, seenCodeTexts) {
+                            const contentBlocks = [];
+                            
+                            // 提取所有文本段落
+                            const textParagraphs = contentArea.querySelectorAll('p.whitespace-normal.break-words');
+                            const codeBlocks = contentArea.querySelectorAll('pre');
+                            
+                            console.log(\`备用提取: 找到 \${textParagraphs.length} 个文本段落, \${codeBlocks.length} 个代码块\`);
+                            
+                            // 创建一个包含所有元素的数组，按DOM顺序排序
+                            const allElements = [];
+                            
+                            textParagraphs.forEach(p => allElements.push({ type: 'text', element: p }));
+                            codeBlocks.forEach(pre => allElements.push({ type: 'code', element: pre }));
+                            
+                            // 按DOM中的实际顺序排序
+                            allElements.sort((a, b) => {
+                                const positionA = a.element.compareDocumentPosition(b.element);
+                                return positionA & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+                            });
+                            
+                            // 处理排序后的元素
+                            allElements.forEach((item, index) => {
+                                if (item.type === 'text') {
+                                    const text = item.element.textContent.trim();
+                                    if (text) {
+                                        contentBlocks.push({
+                                            type: 'text',
+                                            text: text
+                                        });
+                                    }
+                                } else if (item.type === 'code') {
+                                    let language = '';
+                                    const codeElement = item.element.querySelector('code');
+                                    if (codeElement && codeElement.className) {
+                                        const match = codeElement.className.match(/language-([a-zA-Z0-9]+)/);
+                                        if (match) {
+                                            language = match[1];
+                                        }
+                                    }
+                                    
+                                    let rawCodeText = item.element.textContent || "";
+                                    let cleanCodeText = rawCodeText.replace(/Copy$/i, '').trim();
+                                    
+                                    if (language) {
+                                        const languagePrefix = new RegExp(\`^\${language}\\\\s*\`, 'i');
+                                        cleanCodeText = cleanCodeText.replace(languagePrefix, '');
+                                    }
+                                    
+                                    if (cleanCodeText.trim() && !seenCodeTexts.has(cleanCodeText)) {
+                                        seenCodeTexts.add(cleanCodeText);
+                                        
+                                        contentBlocks.push({
+                                            type: 'code',
+                                            language: language || 'text',
+                                            code: cleanCodeText
+                                        });
+                                    }
+                                }
+                            });
+                            
+                            return contentBlocks;
+                        }
+                        
+                        // Store content
                         let content = {
                             conversationTurns: [],
                             uiElements: []
                         };
                         
+                        const mainContentArea = document.querySelector('div.flex-1.flex.flex-col.gap-3');
+                        if (!mainContentArea) {
+                            return { error: "Cannot find main content area" };
+                        }
+                        
+                        const conversationElements = Array.from(mainContentArea.children);
+                        console.log('找到对话元素数量:', conversationElements.length);
+                        
                         let currentTurn = null;
                         let turnIndex = 0;
                         
                         for (const element of conversationElements) {
-                            // 检查是否是用户查询
-                            const isUserQuery = element.querySelector('${userMessageSelector}');
+                            const isUserQuery = element.querySelector('.bg-bg-300');
                             
                             if (isUserQuery) {
-                                // 保存前一个对话轮次
+                                // If there was a previous turn, add it to the results
                                 if (currentTurn) {
                                     content.conversationTurns.push(currentTurn);
                                     turnIndex++;
                                 }
                                 
-                                // 提取用户查询文本
                                 let queryText = isUserQuery.textContent.trim();
                                 queryText = queryText.replace(/Edit$/, '').trim();
+                                queryText = queryText.replace(/^[A-Z\\s]*/, '');
                                 
-                                // 创建新的对话轮次
                                 currentTurn = {
                                     turnIndex: turnIndex,
                                     query: queryText,
-                                    responses: [],
-                                    codeBlocks: [],
-                                    documents: [],
-                                    codeExplanations: []
+                                    response: {
+                                        content: []
+                                    }
                                 };
-                            } else if (currentTurn) {
-                                // 处理Claude的回复
-                                const hasResponseContent = element.querySelector('${assistantMessageSelector}');
+                                
+                                console.log(\`新的对话轮次 \${turnIndex}: \${queryText}\`);
+                            } else {
+                                if (!currentTurn) continue;
+                                
+                                const hasResponseContent = element.querySelector('.font-claude-message');
                                 
                                 if (hasResponseContent) {
-                                    // 提取响应文本
-                                    const responseTexts = element.querySelectorAll('${responseTextSelector}');
-                                    const responses = Array.from(responseTexts).map(p => p.textContent.trim()).filter(text => text);
+                                    console.log(\`处理Claude回复，按顺序解析内容\`);
                                     
-                                    if (responses.length > 0) {
-                                        currentTurn.responses.push(...responses);
-                                    }
+                                    // 🔧 使用修复后的提取函数
+                                    const responseContent = extractResponseContentInOrder(element);
                                     
-                                    // 提取代码块
-                                    await this.extractCodeBlocks(element, currentTurn, codeVersionsMap);
+                                    // 将内容添加到当前轮次
+                                    currentTurn.response.content.push(...responseContent);
                                     
-                                    // 提取文档引用
-                                    this.extractDocuments(element, currentTurn);
-                                    
-                                    // 提取代码说明
-                                    this.extractCodeExplanations(element, currentTurn);
-                                    
-                                    // 提取响应文本
-                                    this.extractResponseText(element, currentTurn);
+                                    console.log(\`当前轮次内容块数量: \${currentTurn.response.content.length}\`);
                                 }
                             }
                         }
                         
-                        // 添加最后一个对话轮次
+                        // Add the last turn (if any)
                         if (currentTurn) {
                             content.conversationTurns.push(currentTurn);
                         }
                         
-                        // 后处理：标记继续查询
-                        this.markContinuationQueries(content.conversationTurns);
-                        
+                        console.log('内容提取完成，对话轮次数量:', content.conversationTurns.length);
                         return content;
                         
                     } catch (e) {
-                        return { error: e.message };
+                        console.error('提取过程中出错:', e);
+                        return { error: e.message, stack: e.stack };
                     }
                 })()
             `;
-            // 执行内容提取脚本
-            const result = await this.llmController.executeLLMScript(this.session, contentScript);
 
-            if (result.success && result.result && !result.result.error) {
+            // 执行脚本
+            const result = await this.llmController.executeLLMScript(this.session, contentScript, {
+                awaitPromise: false,
+                timeout: 15000
+            });
+
+            if (result.success && result.result) {
                 const extractedContent = result.result.value || result.result;
+
+                // 检查是否有错误
+                if (extractedContent.error) {
+                    throw new Error(extractedContent.error);
+                }
 
                 // 确保 conversationTurns 是数组
                 if (!extractedContent.conversationTurns || !Array.isArray(extractedContent.conversationTurns)) {
@@ -741,85 +874,112 @@ export class ClaudeLLMPublisher {
                 }
 
                 console.log('[Claude] ✅ 页面内容提取完成');
+                console.log(`[Claude] 提取到 ${extractedContent.conversationTurns.length} 个对话轮次`);
+
+                // 输出每个对话轮次的详细信息
+                extractedContent.conversationTurns.forEach((turn, index) => {
+                    const textBlocks = turn.response.content.filter(c => c.type === 'text').length;
+                    const codeBlocks = turn.response.content.filter(c => c.type === 'code').length;
+                    console.log(`[Claude] 对话轮次 ${index}:`, {
+                        query: turn.query?.substring(0, 50) + '...',
+                        totalContentBlocks: turn.response.content.length,
+                        textBlocks: textBlocks,
+                        codeBlocks: codeBlocks
+                    });
+                });
+
                 const formattedContent = await this.formatToOpenAIStyle(extractedContent);
                 return formattedContent;
             } else {
-                throw new Error(result.result?.error || '内容提取失败');
+                throw new Error('脚本执行失败: ' + (result.error || '未知错误'));
             }
 
         } catch (error) {
             console.error('[Claude] 页面内容提取失败:', error.message);
             return {
                 error: error.message,
-                conversationTurns: []
+                conversationTurns: [],
+                id: "chatcmpl-" + Date.now(),
+                created: Math.floor(Date.now() / 1000),
+                model: "Claude 4.0 Sonnet",
+                messages: [],
+                usage: {
+                    prompt_tokens: -1,
+                    completion_tokens: -1,
+                    total_tokens: -1
+                },
+                provider: "claude"
             };
         }
     }
 
     /**
-     * 提取代码版本信息
-     * @returns {Array} 代码版本列表
+     * 提取代码版本信息 - 保持原有实现
      */
     async extractCodeVersions() {
         try {
             const script = `
-                (async function() {
-                    const codeVersions = new Map();
-                    
-                    // 查找所有代码版本按钮
-                    const codeButtons = Array.from(document.querySelectorAll('button.flex.text-left.font-styrene.rounded-xl'));
-                    const codeButtonsFiltered = codeButtons.filter(btn => 
-                        btn.textContent.includes('Code') && 
-                        (btn.textContent.includes('Version') || btn.textContent.includes('∙'))
-                    );
-                    
-                    // 处理每个按钮
-                    for (const button of codeButtonsFiltered) {
-                        try {
-                            const buttonText = button.textContent.trim();
-                            
-                            // 提取版本信息
-                            let versionLabel = "Version 1";
-                            if (buttonText.includes('Version')) {
-                                const versionMatch = buttonText.match(/Version\\s*(\\d+)/i);
-                                if (versionMatch) {
-                                    versionLabel = \`Version \${versionMatch[1]}\`;
-                                }
-                            } else if (buttonText.includes('∙')) {
-                                const parts = buttonText.split('∙');
-                                if (parts.length > 1) {
-                                    versionLabel = parts[1].trim();
-                                }
+            (async function() {
+                const codeVersions = new Map();
+                
+                // Find all code version buttons
+                const codeButtons = Array.from(document.querySelectorAll('button.flex.text-left.font-styrene.rounded-xl'));
+                const codeButtonsFiltered = codeButtons.filter(btn => 
+                    btn.textContent.includes('Code') && 
+                    (btn.textContent.includes('Version') || btn.textContent.includes('∙'))
+                );
+                
+                // Process each button sequentially
+                for (const button of codeButtonsFiltered) {
+                    try {
+                        const buttonText = button.textContent.trim();
+                        
+                        // Extract version information
+                        let versionLabel = "Version 1";
+                        if (buttonText.includes('Version')) {
+                            const versionMatch = buttonText.match(/Version\\s*(\\d+)/i);
+                            if (versionMatch) {
+                                versionLabel = \`Version \${versionMatch[1]}\`;
                             }
-                            
-                            // 点击按钮显示代码
-                            button.click();
-                            await new Promise(r => setTimeout(r, 500));
-                            
-                            // 从侧边栏提取代码
-                            const sidebarCodeContainer = document.querySelector('.max-md\\\\:absolute.top-0.right-0.bottom-0.left-0.z-20');
-                            if (sidebarCodeContainer) {
-                                const codeElement = sidebarCodeContainer.querySelector('code.language-python');
-                                if (codeElement) {
-                                    const fullCodeText = codeElement.textContent.trim();
-                                    if (fullCodeText) {
-                                        codeVersions.set(buttonText, {
-                                            language: 'python',
-                                            code: fullCodeText,
-                                            buttonLabel: buttonText,
-                                            version: versionLabel
-                                        });
-                                    }
-                                }
+                        } else if (buttonText.includes('∙')) {
+                            const parts = buttonText.split('∙');
+                            if (parts.length > 1) {
+                                versionLabel = parts[1].trim();
                             }
-                        } catch (buttonError) {
-                            console.error("代码按钮处理错误:", buttonError);
                         }
+                        
+                        // Click the button to display code in sidebar
+                        button.click();
+                        
+                        // Wait for sidebar to update
+                        await new Promise(r => setTimeout(r, 500));
+                        
+                        // Extract code from the sidebar
+                        const sidebarCodeContainer = document.querySelector('.max-md\\\\:absolute.top-0.right-0.bottom-0.left-0.z-20');
+                        if (sidebarCodeContainer) {
+                            const codeElement = sidebarCodeContainer.querySelector('code.language-python');
+                            if (codeElement) {
+                                const fullCodeText = codeElement.textContent.trim();
+                                if (fullCodeText) {
+                                    // Store code with its version info
+                                    codeVersions.set(buttonText, {
+                                        language: 'python',
+                                        code: fullCodeText,
+                                        buttonLabel: buttonText,
+                                        version: versionLabel
+                                    });
+                                    console.log(\`Extracted code for: \${buttonText} (\${versionLabel})\`);
+                                }
+                            }
+                        }
+                    } catch (buttonError) {
+                        console.error("Error processing button:", buttonError);
                     }
-                    
-                    return Array.from(codeVersions.entries());
-                })()
-            `;
+                }
+                
+                return Array.from(codeVersions.entries());
+            })()
+        `;
 
             const result = await this.llmController.executeLLMScript(this.session, script, {
                 awaitPromise: true,
@@ -840,11 +1000,6 @@ export class ClaudeLLMPublisher {
         }
     }
 
-    /**
-     * 格式化为OpenAI兼容格式
-     * @param {Object} content 原始内容
-     * @returns {Object} OpenAI格式的内容
-     */
     async formatToOpenAIStyle(content) {
         try {
             const messages = [];
@@ -860,18 +1015,23 @@ export class ClaudeLLMPublisher {
                     });
                 }
 
-                // 添加助手消息
-                if (turn.responses && turn.responses.length > 0) {
-                    const assistantContent = {
-                        response: turn.responses,
-                        codeBlocks: turn.codeBlocks || [],
-                        documents: turn.documents || [],
-                        codeExplanations: turn.codeExplanations || []
+                // 添加助手消息 - 新格式
+                if (turn.response && turn.response.content && turn.response.content.length > 0) {
+                    // 🔧 新的数据结构：分离文本和代码块
+                    const responseContent = {
+                        contentBlocks: turn.response.content,
+                        // 为了兼容性，也提供传统格式
+                        textBlocks: turn.response.content.filter(c => c.type === 'text').map(c => c.text),
+                        codeBlocks: turn.response.content.filter(c => c.type === 'code').map(c => ({
+                            language: c.language,
+                            code: c.code,
+                            type: 'inline'
+                        }))
                     };
 
                     messages.push({
                         role: "assistant",
-                        content: assistantContent
+                        content: responseContent
                     });
                 }
             }
@@ -880,7 +1040,7 @@ export class ClaudeLLMPublisher {
             return {
                 id: "chatcmpl-" + (conversationId || Date.now()),
                 created: Math.floor(Date.now() / 1000),
-                model: "Claude 3.5 Sonnet",
+                model: "Claude 4.0 Sonnet",
                 messages: messages,
                 usage: {
                     prompt_tokens: -1,
