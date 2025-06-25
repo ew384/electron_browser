@@ -723,335 +723,287 @@ export class ClaudeLLMPublisher {
         }
     }
     /**
-     * 提取页面完整内容 - 最终修复版：提取所有区域的内容
+     * 提取页面完整内容 - 修复版：Node.js环境版本
+     * 基于Console测试成功的逻辑，包装为executeLLMScript
      */
     async extractPageContent() {
         try {
             console.log('[Claude] 开始提取页面内容...');
 
+            // 🔧 将Console测试成功的逻辑包装为脚本字符串
             const contentScript = `
-            (async function() {
-                try {
-                    // 🔧 改进的内容提取函数 - 提取整个回复区域的所有内容
-                    async function extractCompleteContent(element) {
-                        const contentParts = [];
-                        const seenTexts = new Set(); // 用于去重
+        (async function() {
+            try {
+                console.log('=== 开始统一版本内容提取 ===');
+                
+                // 🔧 精确提取函数 - 与Console测试完全一致
+                async function extractFromResponseElement(element) {
+                    const contentParts = [];
+                    const seenTexts = new Set();
+                    
+                    const contentArea = element.querySelector('.font-claude-message');
+                    if (!contentArea) {
+                        console.log('❌ 未找到内容区域');
+                        return '';
+                    }
+                    
+                    console.log('✅ 找到内容区域，开始按DOM顺序提取内容...');
+                    console.log('子元素数量:', contentArea.children.length);
+                    
+                    // 🔧 第一步：按DOM顺序处理每个子元素，提取文本内容
+                    for (let index = 0; index < contentArea.children.length; index++) {
+                        const child = contentArea.children[index];
+                        console.log(\`\\n--- 处理子元素 \${index} ---\`);
+                        console.log('TagName:', child.tagName, 'ClassName:', child.className);
                         
-                        const contentArea = element.querySelector('.font-claude-message');
-                        if (!contentArea) {
-                            console.log('❌ 未找到内容区域');
-                            return '';
+                        // 检查是否是Artifact容器
+                        const hasArtifact = child.querySelector('.artifact-block-cell');
+                        if (hasArtifact) {
+                            console.log('  📦 发现Artifact容器，暂时跳过');
+                            continue; // 稍后单独处理
                         }
                         
-                        console.log('✅ 找到内容区域，开始提取所有内容...');
-                        
-                        // 🔧 按DOM顺序提取内容，保持正确的结构顺序
-                        function extractAllChildElements(container) {
+                        // 处理文本容器
+                        const gridContainer = child.querySelector('.grid-cols-1.grid.gap-2\\\\.5, div[class*="grid"]');
+                        if (gridContainer) {
+                            console.log('  🎯 找到网格容器，按DOM顺序提取所有子元素...');
+                            
+                            // 🔧 关键：按照网格容器内子元素的实际DOM顺序处理
+                            const allGridChildren = Array.from(gridContainer.children);
+                            console.log(\`    📋 网格容器内共有 \${allGridChildren.length} 个子元素\`);
+                            
                             const orderedParts = [];
                             
-                            Array.from(container.children).forEach((child, index) => {
-                                console.log(\`处理子元素 \${index}: \${child.tagName}\`);
+                            allGridChildren.forEach((gridChild, childIndex) => {
+                                console.log(\`      处理网格子元素 \${childIndex}: \${gridChild.tagName}\`);
                                 
-                                if (child.classList.contains('grid')) {
-                                    // 网格容器 - 按顺序处理段落和列表
-                                    Array.from(child.children).forEach((gridChild, gridIndex) => {
-                                        if (gridChild.tagName === 'P' && gridChild.classList.contains('whitespace-normal')) {
-                                            const text = gridChild.textContent.trim();
-                                            if (text && !seenTexts.has(text)) {
-                                                seenTexts.add(text);
-                                                orderedParts.push({
-                                                    type: 'text',
-                                                    content: text,
-                                                    order: \`\${index}.\${gridIndex}\`
-                                                });
-                                                console.log('  ✅ 网格段落:', text.substring(0, 50) + '...');
-                                            }
-                                        } else if (gridChild.tagName === 'UL' || gridChild.tagName === 'OL') {
-                                            const listItems = [];
-                                            Array.from(gridChild.children).forEach((li) => {
-                                                if (li.tagName === 'LI') {
-                                                    const liText = li.textContent.trim();
-                                                    if (liText) {
-                                                        const prefix = gridChild.tagName === 'OL' ? \`\${listItems.length + 1}.\` : '•';
-                                                        listItems.push(\`\${prefix} \${liText}\`);
-                                                    }
-                                                }
-                                            });
-                                            if (listItems.length > 0) {
-                                                const listText = listItems.join('\\n');
-                                                if (!seenTexts.has(listText)) {
-                                                    seenTexts.add(listText);
-                                                    orderedParts.push({
-                                                        type: 'list',
-                                                        content: listText,
-                                                        order: \`\${index}.\${gridIndex}\`
-                                                    });
-                                                    console.log('  ✅ 网格列表:', listItems.length, '项');
-                                                }
-                                            }
-                                        }
-                                    });
-                                } else if (child.classList.contains('pt-3') || child.tagName === 'DIV') {
-                                    // 其他容器 - 按DOM顺序处理所有子元素
-                                    Array.from(child.children).forEach((subChild, subIndex) => {
-                                        if (subChild.tagName === 'P') {
-                                            const text = subChild.textContent.trim();
-                                            if (text && !text.includes('Code') && text.length > 5 && !seenTexts.has(text)) {
-                                                seenTexts.add(text);
-                                                orderedParts.push({
-                                                    type: 'text',
-                                                    content: text,
-                                                    order: \`\${index}.\${subIndex}\`
-                                                });
-                                                console.log('  ✅ 容器段落:', text.substring(0, 50) + '...');
-                                            }
-                                        } else if (subChild.tagName === 'OL' || subChild.tagName === 'UL') {
-                                            const listItems = [];
-                                            Array.from(subChild.children).forEach((li) => {
-                                                if (li.tagName === 'LI') {
-                                                    const liText = li.textContent.trim();
-                                                    if (liText) {
-                                                        const prefix = subChild.tagName === 'OL' ? \`\${listItems.length + 1}.\` : '•';
-                                                        listItems.push(\`\${prefix} \${liText}\`);
-                                                    }
-                                                }
-                                            });
-                                            if (listItems.length > 0) {
-                                                const listText = listItems.join('\\n');
-                                                if (!seenTexts.has(listText)) {
-                                                    seenTexts.add(listText);
-                                                    orderedParts.push({
-                                                        type: 'list',
-                                                        content: listText,
-                                                        order: \`\${index}.\${subIndex}\`
-                                                    });
-                                                    console.log('  ✅ 容器列表:', listItems.length, '项');
-                                                }
+                                if (gridChild.tagName === 'P') {
+                                    const text = gridChild.textContent.trim();
+                                    if (text && text.length > 5) {
+                                        orderedParts.push(text);
+                                        console.log(\`        ✅ 段落: \${text.substring(0, 50)}...\`);
+                                    }
+                                } else if (gridChild.tagName === 'OL' || gridChild.tagName === 'UL') {
+                                    const listItems = [];
+                                    Array.from(gridChild.children).forEach((li, liIndex) => {
+                                        if (li.tagName === 'LI') {
+                                            const liText = li.textContent.trim();
+                                            if (liText) {
+                                                const prefix = gridChild.tagName === 'OL' ? \`\${liIndex + 1}.\` : '•';
+                                                listItems.push(\`\${prefix} \${liText}\`);
                                             }
                                         }
                                     });
                                     
-                                    // 单独处理直接的段落和列表（非子元素）
-                                    const directTexts = child.querySelectorAll(':scope > p');
-                                    directTexts.forEach((textEl, textIndex) => {
-                                        const text = textEl.textContent.trim();
-                                        if (text && !text.includes('Code') && text.length > 5 && !seenTexts.has(text)) {
-                                            seenTexts.add(text);
-                                            orderedParts.push({
-                                                type: 'text',
-                                                content: text,
-                                                order: \`\${index}.direct\${textIndex}\`
-                                            });
-                                            console.log('  ✅ 直接段落:', text.substring(0, 50) + '...');
-                                        }
-                                    });
-                                    
-                                    const directLists = child.querySelectorAll(':scope > ol, :scope > ul');
-                                    directLists.forEach((list, listIndex) => {
-                                        const listItems = [];
-                                        Array.from(list.children).forEach((li) => {
-                                            if (li.tagName === 'LI') {
-                                                const liText = li.textContent.trim();
-                                                if (liText) {
-                                                    const prefix = list.tagName === 'OL' ? \`\${listItems.length + 1}.\` : '•';
-                                                    listItems.push(\`\${prefix} \${liText}\`);
-                                                }
-                                            }
-                                        });
-                                        if (listItems.length > 0) {
-                                            const listText = listItems.join('\\n');
-                                            if (!seenTexts.has(listText)) {
-                                                seenTexts.add(listText);
-                                                orderedParts.push({
-                                                    type: 'list',
-                                                    content: listText,
-                                                    order: \`\${index}.directList\${listIndex}\`
-                                                });
-                                                console.log('  ✅ 直接列表:', listItems.length, '项');
-                                            }
-                                        }
-                                    });
-                                    
-                                    // 处理内联代码块
-                                    const codeBlocks = child.querySelectorAll('pre code');
-                                    codeBlocks.forEach((codeBlock, codeIndex) => {
-                                        const code = codeBlock.textContent.trim();
-                                        if (code && code.length > 10) {
-                                            const language = codeBlock.className.match(/language-([a-zA-Z0-9]+)/)?.[1] || 'bash';
-                                            const markdownCode = \`\\\`\\\`\\\`\${language}\\n\${code}\\n\\\`\\\`\\\`\`;
-                                            if (!seenTexts.has(markdownCode)) {
-                                                seenTexts.add(markdownCode);
-                                                orderedParts.push({
-                                                    type: 'code',
-                                                    content: markdownCode,
-                                                    order: \`\${index}.code\${codeIndex}\`
-                                                });
-                                                console.log('  ✅ 内联代码块:', language, code.length, '字符');
-                                            }
-                                        }
-                                    });
+                                    if (listItems.length > 0) {
+                                        const listText = listItems.join('\\n');
+                                        orderedParts.push(listText);
+                                        console.log(\`        ✅ \${gridChild.tagName}: \${listItems.length} 项\`);
+                                    }
+                                } else {
+                                    // 处理其他类型的元素
+                                    const text = gridChild.textContent.trim();
+                                    if (text && text.length > 5) {
+                                        orderedParts.push(text);
+                                        console.log(\`        ✅ 其他元素(\${gridChild.tagName}): \${text.substring(0, 50)}...\`);
+                                    }
                                 }
                             });
                             
-                            // 🔧 按DOM顺序返回内容
-                            return orderedParts.map(part => part.content);
-                        }
-                        
-                        // 提取基础内容
-                        const basicParts = extractAllChildElements(contentArea);
-                        contentParts.push(...basicParts);
-                        
-                        // 🔧 单独处理Artifact（放在开头，因为通常是主要代码）
-                        const artifacts = contentArea.querySelectorAll('.artifact-block-cell');
-                        const artifactCodes = [];
-                        
-                        console.log(\`📦 处理 \${artifacts.length} 个Artifact...\`);
-                        
-                        for (let i = 0; i < artifacts.length; i++) {
-                            const artifact = artifacts[i];
-                            const codeLabel = artifact.querySelector('.text-sm.text-text-300');
-                            const isCode = codeLabel && codeLabel.textContent.includes('Code');
-                            
-                            if (isCode) {
-                                const titleElement = artifact.querySelector('.leading-tight.text-sm');
-                                const title = titleElement ? titleElement.textContent.trim() : \`代码块 \${i + 1}\`;
-                                
-                                console.log(\`Artifact \${i}: \${title}\`);
-                                
-                                // 🔧 尝试获取完整代码：先点击展开，如果失败使用预览
-                                let fullCode = '';
-                                let language = 'bash';
-                                
-                                try {
-                                    // 方法1：点击获取完整代码
-                                    artifact.click();
-                                    await new Promise(resolve => setTimeout(resolve, 1500));
-                                    
-                                    const expandedCode = document.querySelector('code.language-bash, code.language-shell, code.language-python, code.language-javascript');
-                                    if (expandedCode) {
-                                        fullCode = expandedCode.textContent.trim();
-                                        const languageMatch = expandedCode.className.match(/language-([a-zA-Z0-9]+)/);
-                                        language = languageMatch ? languageMatch[1] : 'bash';
-                                        
-                                        console.log(\`  ✅ 获取完整代码: \${fullCode.length} 字符\`);
-                                        
-                                        // 关闭侧边栏
-                                        const closeButton = document.querySelector('[aria-label="Close"]');
-                                        if (closeButton) {
-                                            closeButton.click();
-                                            await new Promise(resolve => setTimeout(resolve, 500));
-                                        }
-                                    }
-                                } catch (clickError) {
-                                    console.log('  ⚠️ 点击展开失败，使用预览代码');
-                                }
-                                
-                                // 方法2：如果点击失败，使用预览代码
-                                if (!fullCode) {
-                                    const previewElement = artifact.querySelector('.font-mono');
-                                    if (previewElement) {
-                                        fullCode = previewElement.textContent.trim();
-                                        console.log(\`  📝 使用预览代码: \${fullCode.length} 字符\`);
-                                    }
-                                }
-                                
-                                if (fullCode) {
-                                    const markdownCode = \`\\\`\\\`\\\`\${language}\\n\${fullCode}\\n\\\`\\\`\\\`\`;
-                                    artifactCodes.push(markdownCode);
-                                }
+                            // 按DOM顺序组合这个容器的内容
+                            const containerContent = orderedParts.join('\\n\\n');
+                            if (containerContent.trim()) {
+                                contentParts.push(containerContent);
+                                console.log(\`    ✅ 容器内容按DOM顺序组合完成: \${containerContent.length} 字符\`);
+                                console.log(\`    📄 容器内容预览:\\n\${containerContent.substring(0, 200)}...\`);
                             }
-                        }
-                        
-                        // 🔧 将Artifact代码放在开头
-                        const finalParts = [...artifactCodes, ...contentParts];
-                        
-                        console.log('内容提取完成:');
-                        console.log('- Artifact代码块:', artifactCodes.length);
-                        console.log('- 其他内容块:', contentParts.length);
-                        console.log('- 总内容块:', finalParts.length);
-                        
-                        const finalContent = finalParts.join('\\n\\n');
-                        console.log('- 最终内容长度:', finalContent.length);
-                        
-                        return finalContent;
-                    }
-                    
-                    // 主提取逻辑
-                    const content = { conversationTurns: [] };
-                    
-                    const mainContentArea = document.querySelector('div.flex-1.flex.flex-col.gap-3');
-                    if (!mainContentArea) {
-                        return { error: "Cannot find main content area" };
-                    }
-                    
-                    const conversationElements = Array.from(mainContentArea.children);
-                    console.log('找到对话元素数量:', conversationElements.length);
-                    
-                    let currentTurn = null;
-                    let turnIndex = 0;
-                    
-                    for (const element of conversationElements) {
-                        const isUserQuery = element.querySelector('.bg-bg-300');
-                        
-                        if (isUserQuery) {
-                            if (currentTurn) {
-                                content.conversationTurns.push(currentTurn);
-                                turnIndex++;
-                            }
-                            
-                            let queryText = isUserQuery.textContent.trim();
-                            queryText = queryText.replace(/Edit$/, '').trim();
-                            
-                            // 🔧 移除用户名前缀
-                            const userAvatar = element.querySelector('.rounded-full.font-bold');
-                            if (userAvatar) {
-                                const userName = userAvatar.textContent.trim();
-                                if (queryText.startsWith(userName)) {
-                                    queryText = queryText.substring(userName.length).trim();
-                                }
-                            }
-                            
-                            currentTurn = {
-                                turnIndex: turnIndex,
-                                query: queryText,
-                                response: null
-                            };
-                            
-                            console.log(\`新的对话轮次 \${turnIndex}: \${queryText.substring(0, 50)}...\`);
                         } else {
-                            if (!currentTurn) continue;
-                            
-                            const hasResponseContent = element.querySelector('.font-claude-message');
-                            
-                            if (hasResponseContent) {
-                                console.log('提取Claude回复内容...');
-                                
-                                const responseText = await extractCompleteContent(element);
-                                currentTurn.response = responseText;
-                                
-                                console.log(\`✅ 回复内容长度: \${responseText.length} 字符\`);
+                            // 没有网格容器的直接文本
+                            const text = child.textContent.trim();
+                            if (text && text.length > 10) {
+                                contentParts.push(text);
+                                console.log(\`  ✅ 直接文本: \${text.length} 字符\`);
                             }
                         }
                     }
                     
-                    if (currentTurn) {
-                        content.conversationTurns.push(currentTurn);
+                    // 🔧 第二步：单独处理Artifact代码块
+                    const artifacts = contentArea.querySelectorAll('.artifact-block-cell');
+                    console.log(\`\\n📦 处理 \${artifacts.length} 个Artifact...\`);
+                    
+                    const artifactCodes = [];
+                    for (let i = 0; i < artifacts.length; i++) {
+                        const artifact = artifacts[i];
+                        const codeLabel = artifact.querySelector('.text-sm.text-text-300');
+                        const isCode = codeLabel && codeLabel.textContent.includes('Code');
+                        
+                        if (isCode) {
+                            const titleElement = artifact.querySelector('.leading-tight.text-sm');
+                            const title = titleElement ? titleElement.textContent.trim() : \`代码块 \${i + 1}\`;
+                            console.log(\`  Artifact \${i}: \${title}\`);
+                            
+                            let fullCode = '';
+                            let language = 'python';
+                            
+                            try {
+                                // 尝试点击获取完整代码
+                                console.log('    🖱️ 点击展开...');
+                                artifact.click();
+                                await new Promise(resolve => setTimeout(resolve, 2000));
+                                
+                                // 查找展开后的代码
+                                const expandedCodeElement = document.querySelector('code[class*="language-"]');
+                                if (expandedCodeElement && expandedCodeElement.textContent.trim().length > 100) {
+                                    fullCode = expandedCodeElement.textContent.trim();
+                                    const languageMatch = expandedCodeElement.className.match(/language-([a-zA-Z0-9]+)/);
+                                    language = languageMatch ? languageMatch[1] : 'python';
+                                    console.log(\`    ✅ 完整代码: \${fullCode.length} 字符, 语言: \${language}\`);
+                                } else {
+                                    console.log('    ⚠️ 未找到展开的代码元素或代码太短');
+                                }
+                                
+                                // 关闭侧边栏
+                                const closeButton = document.querySelector('[aria-label="Close"]');
+                                if (closeButton && closeButton.offsetParent !== null) {
+                                    closeButton.click();
+                                    await new Promise(resolve => setTimeout(resolve, 500));
+                                }
+                                
+                            } catch (clickError) {
+                                console.log('    ⚠️ 点击展开失败:', clickError.message);
+                            }
+                            
+                            // 备用方案：使用预览代码
+                            if (!fullCode) {
+                                console.log('    🔄 使用预览代码作为备用...');
+                                const previewElement = artifact.querySelector('.font-mono');
+                                if (previewElement) {
+                                    fullCode = previewElement.textContent.trim();
+                                    console.log(\`    📝 预览代码长度: \${fullCode.length} 字符\`);
+                                }
+                            }
+                            
+                            if (fullCode) {
+                                const markdownCode = \`\\\`\\\`\\\`\${language}\\n\${fullCode}\\n\\\`\\\`\\\`\`;
+                                artifactCodes.push(markdownCode);
+                                console.log(\`    ✅ 代码块添加完成\`);
+                            }
+                        }
                     }
                     
-                    console.log('内容提取完成，对话轮次数量:', content.conversationTurns.length);
-                    return content;
+                    // 🔧 第三步：按正确顺序组合最终内容
+                    console.log('\\n=== 组合最终内容 ===');
+                    const finalParts = [];
                     
-                } catch (e) {
-                    console.error('提取过程中出错:', e);
-                    return { error: e.message, stack: e.stack };
+                    // 1. 第一个文本内容（开头介绍）
+                    if (contentParts.length > 0) {
+                        finalParts.push(contentParts[0]);
+                        console.log('✅ 添加开头介绍');
+                    }
+                    
+                    // 2. Artifact代码块
+                    if (artifactCodes.length > 0) {
+                        finalParts.push(...artifactCodes);
+                        console.log(\`✅ 添加 \${artifactCodes.length} 个代码块\`);
+                    }
+                    
+                    // 3. 其余文本内容（解释文字，按DOM顺序）
+                    if (contentParts.length > 1) {
+                        finalParts.push(...contentParts.slice(1));
+                        console.log(\`✅ 添加 \${contentParts.length - 1} 个解释文本块\`);
+                    }
+                    
+                    console.log('内容提取完成统计:');
+                    console.log('- 文本内容块数:', contentParts.length);
+                    console.log('- Artifact代码块数:', artifactCodes.length);
+                    console.log('- 最终组合块数:', finalParts.length);
+                    
+                    const finalContent = finalParts.join('\\n\\n');
+                    console.log('- 最终内容长度:', finalContent.length, '字符');
+                    
+                    return finalContent;
                 }
-            })()
+                
+                // 主提取逻辑
+                const content = { conversationTurns: [] };
+                
+                const mainContentArea = document.querySelector('div.flex-1.flex.flex-col.gap-3');
+                if (!mainContentArea) {
+                    return { error: "Cannot find main content area" };
+                }
+                
+                const conversationElements = Array.from(mainContentArea.children);
+                console.log('找到对话元素数量:', conversationElements.length);
+                
+                let currentTurn = null;
+                let turnIndex = 0;
+                
+                for (const element of conversationElements) {
+                    const isUserQuery = element.querySelector('.bg-bg-300');
+                    
+                    if (isUserQuery) {
+                        // 保存上一轮对话
+                        if (currentTurn) {
+                            content.conversationTurns.push(currentTurn);
+                            turnIndex++;
+                        }
+                        
+                        // 提取用户查询
+                        let queryText = isUserQuery.textContent.trim();
+                        queryText = queryText.replace(/Edit$/, '').trim();
+                        
+                        // 移除用户名前缀
+                        const userAvatar = element.querySelector('.rounded-full.font-bold');
+                        if (userAvatar) {
+                            const userName = userAvatar.textContent.trim();
+                            if (queryText.startsWith(userName)) {
+                                queryText = queryText.substring(userName.length).trim();
+                            }
+                        }
+                        
+                        currentTurn = {
+                            turnIndex: turnIndex,
+                            query: queryText,
+                            response: null
+                        };
+                        
+                        console.log(\`新的对话轮次 \${turnIndex}: \${queryText.substring(0, 50)}...\`);
+                        
+                    } else {
+                        // 处理助手回复
+                        if (!currentTurn) continue;
+                        
+                        const hasResponseContent = element.querySelector('.font-claude-message');
+                        if (hasResponseContent) {
+                            console.log('提取Claude回复内容...');
+                            
+                            const responseText = await extractFromResponseElement(element);
+                            currentTurn.response = responseText;
+                            
+                            console.log(\`✅ 回复内容长度: \${responseText.length} 字符\`);
+                        }
+                    }
+                }
+                
+                // 保存最后一轮对话
+                if (currentTurn) {
+                    content.conversationTurns.push(currentTurn);
+                }
+                
+                console.log('内容提取完成，对话轮次数量:', content.conversationTurns.length);
+                return content;
+                
+            } catch (e) {
+                console.error('提取过程中出错:', e);
+                return { error: e.message, stack: e.stack };
+            }
+        })()
         `;
 
             // 执行脚本
             const result = await this.llmController.executeLLMScript(this.session, contentScript, {
                 awaitPromise: true,
-                timeout: 45000 // 增加超时时间，因为需要处理点击操作
+                timeout: 45000
             });
 
             if (result.success && result.result) {
