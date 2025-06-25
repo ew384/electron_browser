@@ -536,7 +536,7 @@ export class ClaudeLLMPublisher {
     }
 
     /**
-     * 等待Claude响应完成
+     * 等待Claude响应完成 - 最终修复版：基于完整回复内容稳定性
      * @returns {Object} 等待结果
      */
     async waitForResponse() {
@@ -544,74 +544,174 @@ export class ClaudeLLMPublisher {
             console.log('[Claude] 等待响应完成...');
 
             const waitScript = `
-                (async function() {
-                    try {
-                        const maxWaitTime = ${this.timing.responseTimeout};
-                        const checkInterval = ${this.timing.responseCheckInterval};
-                        const startTime = Date.now();
+            (async function() {
+                try {
+                    const maxWaitTime = ${this.timing.responseTimeout};
+                    const checkInterval = 2000;
+                    const startTime = Date.now();
+                    
+                    let lastCompleteLength = 0;
+                    let stableCount = 0;
+                    const requiredStableChecks = 3;
+                    
+                    console.log('[Claude Wait] 开始完整内容稳定性检测...');
+                    
+                    while (Date.now() - startTime < maxWaitTime) {
+                        // 1. 基础完成检测
+                        const supportLink = document.querySelector('a[href*="claude-is-providing-incorrect-or-misleading-responses"]');
+                        const hasSupportLink = supportLink && supportLink.offsetParent !== null;
                         
-                        while (Date.now() - startTime < maxWaitTime) {
-                            // 检查思维指示器是否消失
-                            const thinkingIndicator = document.querySelector('[data-testid="conversation-turn-loading"]') || 
-                                                    document.querySelector('.animate-pulse');
+                        // 2. 🔧 检测真实生成状态（排除静态Loading）
+                        function checkRealGenerationStatus() {
+                            // 检查可见的动态指示器
+                            const dynamicIndicators = [
+                                '[data-testid="conversation-turn-loading"]',
+                                '.animate-pulse',
+                                '.animate-spin',
+                                '[data-loading="true"]'
+                            ];
                             
-                            // 检查输入框是否重新启用
-                            const textArea = document.querySelector('div.ProseMirror[contenteditable="true"]');
-                            const sendButton = document.querySelector('button[aria-label*="send" i]:not([disabled])');
-                            
-                            // 检查重新生成按钮（只返回是否存在，不返回元素本身）
-                            const buttons = Array.from(document.querySelectorAll('button'));
-                            const hasRegenerateButton = buttons.some(btn => 
-                                btn.textContent.includes('Regenerate') || 
-                                btn.textContent.includes('重新生成') ||
-                                btn.textContent.includes('Retry')
-                            );
-                            
-                            // 判断响应是否完成
-                            const isComplete = (!thinkingIndicator && textArea && sendButton) || hasRegenerateButton;
-                            
-                            if (isComplete) {
-                                const waitTime = Date.now() - startTime;
-                                return {
-                                    success: true,
-                                    waitTime: waitTime,
-                                    hasRegenerateButton: hasRegenerateButton
-                                };
+                            for (const selector of dynamicIndicators) {
+                                const elements = document.querySelectorAll(selector);
+                                for (const el of elements) {
+                                    if (el.offsetParent !== null) {
+                                        return true;
+                                    }
+                                }
                             }
                             
-                            await new Promise(resolve => setTimeout(resolve, checkInterval));
+                            // 检查动态生成文本（只在主内容区域）
+                            const dynamicKeywords = ['生成中...', 'Generating...', '正在生成...', 'Thinking...'];
+                            const mainContent = document.querySelector('div.flex-1.flex.flex-col.gap-3');
+                            if (mainContent) {
+                                const mainText = mainContent.textContent;
+                                for (const keyword of dynamicKeywords) {
+                                    if (mainText.includes(keyword)) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            
+                            return false;
                         }
                         
-                        return {
-                            success: false,
-                            error: 'Response timeout',
-                            waitTime: maxWaitTime
-                        };
+                        const hasRealGeneration = checkRealGenerationStatus();
                         
-                    } catch (e) {
-                        return {
-                            success: false,
-                            error: e.message
-                        };
+                        // 3. 🔧 关键改进：检查完整回复内容的稳定性
+                        let currentCompleteLength = 0;
+                        const mainContentArea = document.querySelector('div.flex-1.flex.flex-col.gap-3');
+                        
+                        if (mainContentArea) {
+                            const conversationElements = Array.from(mainContentArea.children);
+                            
+                            // 找到最新的助手回复
+                            for (let i = conversationElements.length - 1; i >= 0; i--) {
+                                const element = conversationElements[i];
+                                const hasResponse = element.querySelector('.font-claude-message');
+                                
+                                if (hasResponse) {
+                                    // 获取整个回复区域的内容长度（包括Artifact和解释文本）
+                                    currentCompleteLength = hasResponse.textContent.length;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // 检查完整内容是否稳定
+                        const contentChanged = currentCompleteLength !== lastCompleteLength;
+                        if (contentChanged) {
+                            stableCount = 0;
+                            console.log('[Claude Wait] 完整内容变化:', lastCompleteLength, '->', currentCompleteLength);
+                        } else {
+                            stableCount++;
+                        }
+                        lastCompleteLength = currentCompleteLength;
+                        
+                        // 4. 综合判断
+                        const elapsed = Date.now() - startTime;
+                        const basicComplete = hasSupportLink;
+                        const noRealGeneration = !hasRealGeneration;
+                        const contentStable = stableCount >= requiredStableChecks;
+                        const minTimeElapsed = elapsed > 5000; // 最少等待5秒
+                        const hasContent = currentCompleteLength > 50; // 确保有实际内容
+                        
+                        console.log('[Claude Wait] 状态检查:', {
+                            elapsed: Math.round(elapsed / 1000) + 's',
+                            supportLink: basicComplete,
+                            noGeneration: noRealGeneration,
+                            contentStable: stableCount + '/' + requiredStableChecks,
+                            contentLength: currentCompleteLength,
+                            minTime: minTimeElapsed,
+                            hasContent: hasContent
+                        });
+                        
+                        // 🔧 最终完成条件：基于完整内容稳定性
+                        if (basicComplete && noRealGeneration && contentStable && minTimeElapsed && hasContent) {
+                            const waitTime = Date.now() - startTime;
+                            console.log('[Claude Wait] ✅ 完整回复真正完成！');
+                            return {
+                                success: true,
+                                waitTime: waitTime,
+                                method: 'complete_content_stability',
+                                finalContentLength: currentCompleteLength,
+                                stableChecks: stableCount
+                            };
+                        }
+                        
+                        // 🔧 快速完成条件：长时间等待后的备用逻辑
+                        if (basicComplete && noRealGeneration && stableCount >= 2 && elapsed > 30000) {
+                            const waitTime = Date.now() - startTime;
+                            console.log('[Claude Wait] ⚡ 长时间等待，启用快速完成');
+                            return {
+                                success: true,
+                                waitTime: waitTime,
+                                method: 'extended_wait_fallback',
+                                finalContentLength: currentCompleteLength
+                            };
+                        }
+                        
+                        await new Promise(resolve => setTimeout(resolve, checkInterval));
                     }
-                })()
-            `;
+                    
+                    return {
+                        success: false,
+                        error: 'Timeout waiting for complete content stability',
+                        waitTime: maxWaitTime,
+                        finalContentLength: lastCompleteLength
+                    };
+                    
+                } catch (e) {
+                    return {
+                        success: false,
+                        error: e.message,
+                        stack: e.stack
+                    };
+                }
+            })()
+        `;
 
             const result = await this.llmController.executeLLMScript(this.session, waitScript, {
                 awaitPromise: true,
-                timeout: this.timing.responseTimeout + 5000
+                timeout: this.timing.responseTimeout + 15000
             });
 
             if (result.success && result.result) {
-                const waitResult = result.result.value || result.result;  // 🔧 修复解析
+                const waitResult = result.result.value || result.result;
 
                 if (waitResult && waitResult.success) {
-                    console.log('[Claude] ✅ 响应等待完成');
-                    await this.delay(2000);
+                    console.log(`[Claude] ✅ 完整回复等待成功`);
+                    console.log(`[Claude] 方法: ${waitResult.method}`);
+                    console.log(`[Claude] 耗时: ${waitResult.waitTime}ms`);
+                    console.log(`[Claude] 最终内容长度: ${waitResult.finalContentLength}`);
+
+                    // 完成后稍等确保DOM完全稳定
+                    await this.delay(1000);
                     return { success: true };
                 } else {
-                    throw new Error(waitResult?.error || '响应等待失败');
+                    throw new Error(waitResult?.error || '完整内容等待失败');
                 }
+            } else {
+                throw new Error('脚本执行失败: ' + (result?.error || '未知错误'));
             }
 
         } catch (error) {
@@ -622,273 +722,363 @@ export class ClaudeLLMPublisher {
             };
         }
     }
-
     /**
-     * 提取页面完整内容 - 最终修复版本
-     * 基于Chrome Console测试成功的逻辑
+     * 提取页面完整内容 - 最终修复版：提取所有区域的内容
      */
     async extractPageContent() {
         try {
             console.log('[Claude] 开始提取页面内容...');
 
-            // 最终修复版内容提取脚本
             const contentScript = `
-                (function() {
-                    try {
-                        // 🔧 修复后的内容提取函数
-                        function extractResponseContentInOrder(element) {
-                            const contentBlocks = [];
-                            const seenCodeTexts = new Set(); // 用于代码去重
+            (async function() {
+                try {
+                    // 🔧 改进的内容提取函数 - 提取整个回复区域的所有内容
+                    async function extractCompleteContent(element) {
+                        const contentParts = [];
+                        const seenTexts = new Set(); // 用于去重
+                        
+                        const contentArea = element.querySelector('.font-claude-message');
+                        if (!contentArea) {
+                            console.log('❌ 未找到内容区域');
+                            return '';
+                        }
+                        
+                        console.log('✅ 找到内容区域，开始提取所有内容...');
+                        
+                        // 🔧 按DOM顺序提取内容，保持正确的结构顺序
+                        function extractAllChildElements(container) {
+                            const orderedParts = [];
                             
-                            // 🔧 关键修复：找到实际的内容容器
-                            const contentArea = element.querySelector('.font-claude-message');
-                            if (!contentArea) return contentBlocks;
-                            
-                            // 🔧 关键修复：找到网格容器
-                            const gridContainer = contentArea.querySelector('div[class*="grid-cols-1"]');
-                            if (!gridContainer) {
-                                console.log('未找到网格容器，尝试直接从contentArea提取');
-                                return extractFromDirectChildren(contentArea, seenCodeTexts);
-                            }
-                            
-                            console.log(\`找到网格容器，包含 \${gridContainer.children.length} 个子元素\`);
-                            
-                            // 🔧 按顺序遍历网格容器的所有子元素
-                            Array.from(gridContainer.children).forEach((child, index) => {
-                                console.log(\`处理网格子元素 \${index}: \${child.tagName}\`);
+                            Array.from(container.children).forEach((child, index) => {
+                                console.log(\`处理子元素 \${index}: \${child.tagName}\`);
                                 
-                                if (child.tagName === 'P' && child.classList.contains('whitespace-normal')) {
-                                    // 这是文本段落
-                                    const text = child.textContent.trim();
-                                    if (text) {
-                                        contentBlocks.push({
-                                            type: 'text',
-                                            text: text
+                                if (child.classList.contains('grid')) {
+                                    // 网格容器 - 按顺序处理段落和列表
+                                    Array.from(child.children).forEach((gridChild, gridIndex) => {
+                                        if (gridChild.tagName === 'P' && gridChild.classList.contains('whitespace-normal')) {
+                                            const text = gridChild.textContent.trim();
+                                            if (text && !seenTexts.has(text)) {
+                                                seenTexts.add(text);
+                                                orderedParts.push({
+                                                    type: 'text',
+                                                    content: text,
+                                                    order: \`\${index}.\${gridIndex}\`
+                                                });
+                                                console.log('  ✅ 网格段落:', text.substring(0, 50) + '...');
+                                            }
+                                        } else if (gridChild.tagName === 'UL' || gridChild.tagName === 'OL') {
+                                            const listItems = [];
+                                            Array.from(gridChild.children).forEach((li) => {
+                                                if (li.tagName === 'LI') {
+                                                    const liText = li.textContent.trim();
+                                                    if (liText) {
+                                                        const prefix = gridChild.tagName === 'OL' ? \`\${listItems.length + 1}.\` : '•';
+                                                        listItems.push(\`\${prefix} \${liText}\`);
+                                                    }
+                                                }
+                                            });
+                                            if (listItems.length > 0) {
+                                                const listText = listItems.join('\\n');
+                                                if (!seenTexts.has(listText)) {
+                                                    seenTexts.add(listText);
+                                                    orderedParts.push({
+                                                        type: 'list',
+                                                        content: listText,
+                                                        order: \`\${index}.\${gridIndex}\`
+                                                    });
+                                                    console.log('  ✅ 网格列表:', listItems.length, '项');
+                                                }
+                                            }
+                                        }
+                                    });
+                                } else if (child.classList.contains('pt-3') || child.tagName === 'DIV') {
+                                    // 其他容器 - 按DOM顺序处理所有子元素
+                                    Array.from(child.children).forEach((subChild, subIndex) => {
+                                        if (subChild.tagName === 'P') {
+                                            const text = subChild.textContent.trim();
+                                            if (text && !text.includes('Code') && text.length > 5 && !seenTexts.has(text)) {
+                                                seenTexts.add(text);
+                                                orderedParts.push({
+                                                    type: 'text',
+                                                    content: text,
+                                                    order: \`\${index}.\${subIndex}\`
+                                                });
+                                                console.log('  ✅ 容器段落:', text.substring(0, 50) + '...');
+                                            }
+                                        } else if (subChild.tagName === 'OL' || subChild.tagName === 'UL') {
+                                            const listItems = [];
+                                            Array.from(subChild.children).forEach((li) => {
+                                                if (li.tagName === 'LI') {
+                                                    const liText = li.textContent.trim();
+                                                    if (liText) {
+                                                        const prefix = subChild.tagName === 'OL' ? \`\${listItems.length + 1}.\` : '•';
+                                                        listItems.push(\`\${prefix} \${liText}\`);
+                                                    }
+                                                }
+                                            });
+                                            if (listItems.length > 0) {
+                                                const listText = listItems.join('\\n');
+                                                if (!seenTexts.has(listText)) {
+                                                    seenTexts.add(listText);
+                                                    orderedParts.push({
+                                                        type: 'list',
+                                                        content: listText,
+                                                        order: \`\${index}.\${subIndex}\`
+                                                    });
+                                                    console.log('  ✅ 容器列表:', listItems.length, '项');
+                                                }
+                                            }
+                                        }
+                                    });
+                                    
+                                    // 单独处理直接的段落和列表（非子元素）
+                                    const directTexts = child.querySelectorAll(':scope > p');
+                                    directTexts.forEach((textEl, textIndex) => {
+                                        const text = textEl.textContent.trim();
+                                        if (text && !text.includes('Code') && text.length > 5 && !seenTexts.has(text)) {
+                                            seenTexts.add(text);
+                                            orderedParts.push({
+                                                type: 'text',
+                                                content: text,
+                                                order: \`\${index}.direct\${textIndex}\`
+                                            });
+                                            console.log('  ✅ 直接段落:', text.substring(0, 50) + '...');
+                                        }
+                                    });
+                                    
+                                    const directLists = child.querySelectorAll(':scope > ol, :scope > ul');
+                                    directLists.forEach((list, listIndex) => {
+                                        const listItems = [];
+                                        Array.from(list.children).forEach((li) => {
+                                            if (li.tagName === 'LI') {
+                                                const liText = li.textContent.trim();
+                                                if (liText) {
+                                                    const prefix = list.tagName === 'OL' ? \`\${listItems.length + 1}.\` : '•';
+                                                    listItems.push(\`\${prefix} \${liText}\`);
+                                                }
+                                            }
                                         });
-                                        console.log(\`  ✅ 添加文本: \${text.substring(0, 50)}...\`);
-                                    }
-                                } else if (child.tagName === 'PRE') {
-                                    // 这是代码块
-                                    // 获取代码语言
-                                    let language = '';
-                                    const codeElement = child.querySelector('code');
-                                    if (codeElement && codeElement.className) {
-                                        const match = codeElement.className.match(/language-([a-zA-Z0-9]+)/);
-                                        if (match) {
-                                            language = match[1];
+                                        if (listItems.length > 0) {
+                                            const listText = listItems.join('\\n');
+                                            if (!seenTexts.has(listText)) {
+                                                seenTexts.add(listText);
+                                                orderedParts.push({
+                                                    type: 'list',
+                                                    content: listText,
+                                                    order: \`\${index}.directList\${listIndex}\`
+                                                });
+                                                console.log('  ✅ 直接列表:', listItems.length, '项');
+                                            }
+                                        }
+                                    });
+                                    
+                                    // 处理内联代码块
+                                    const codeBlocks = child.querySelectorAll('pre code');
+                                    codeBlocks.forEach((codeBlock, codeIndex) => {
+                                        const code = codeBlock.textContent.trim();
+                                        if (code && code.length > 10) {
+                                            const language = codeBlock.className.match(/language-([a-zA-Z0-9]+)/)?.[1] || 'bash';
+                                            const markdownCode = \`\\\`\\\`\\\`\${language}\\n\${code}\\n\\\`\\\`\\\`\`;
+                                            if (!seenTexts.has(markdownCode)) {
+                                                seenTexts.add(markdownCode);
+                                                orderedParts.push({
+                                                    type: 'code',
+                                                    content: markdownCode,
+                                                    order: \`\${index}.code\${codeIndex}\`
+                                                });
+                                                console.log('  ✅ 内联代码块:', language, code.length, '字符');
+                                            }
+                                        }
+                                    });
+                                }
+                            });
+                            
+                            // 🔧 按DOM顺序返回内容
+                            return orderedParts.map(part => part.content);
+                        }
+                        
+                        // 提取基础内容
+                        const basicParts = extractAllChildElements(contentArea);
+                        contentParts.push(...basicParts);
+                        
+                        // 🔧 单独处理Artifact（放在开头，因为通常是主要代码）
+                        const artifacts = contentArea.querySelectorAll('.artifact-block-cell');
+                        const artifactCodes = [];
+                        
+                        console.log(\`📦 处理 \${artifacts.length} 个Artifact...\`);
+                        
+                        for (let i = 0; i < artifacts.length; i++) {
+                            const artifact = artifacts[i];
+                            const codeLabel = artifact.querySelector('.text-sm.text-text-300');
+                            const isCode = codeLabel && codeLabel.textContent.includes('Code');
+                            
+                            if (isCode) {
+                                const titleElement = artifact.querySelector('.leading-tight.text-sm');
+                                const title = titleElement ? titleElement.textContent.trim() : \`代码块 \${i + 1}\`;
+                                
+                                console.log(\`Artifact \${i}: \${title}\`);
+                                
+                                // 🔧 尝试获取完整代码：先点击展开，如果失败使用预览
+                                let fullCode = '';
+                                let language = 'bash';
+                                
+                                try {
+                                    // 方法1：点击获取完整代码
+                                    artifact.click();
+                                    await new Promise(resolve => setTimeout(resolve, 1500));
+                                    
+                                    const expandedCode = document.querySelector('code.language-bash, code.language-shell, code.language-python, code.language-javascript');
+                                    if (expandedCode) {
+                                        fullCode = expandedCode.textContent.trim();
+                                        const languageMatch = expandedCode.className.match(/language-([a-zA-Z0-9]+)/);
+                                        language = languageMatch ? languageMatch[1] : 'bash';
+                                        
+                                        console.log(\`  ✅ 获取完整代码: \${fullCode.length} 字符\`);
+                                        
+                                        // 关闭侧边栏
+                                        const closeButton = document.querySelector('[aria-label="Close"]');
+                                        if (closeButton) {
+                                            closeButton.click();
+                                            await new Promise(resolve => setTimeout(resolve, 500));
                                         }
                                     }
-                                    
-                                    // 获取并清理代码文本
-                                    let rawCodeText = child.textContent || "";
-                                    let cleanCodeText = rawCodeText;
-                                    
-                                    // 移除 Copy 后缀
-                                    cleanCodeText = cleanCodeText.replace(/Copy$/i, '').trim();
-                                    
-                                    // 🔧 关键修复：移除语言标签前缀
-                                    if (language) {
-                                        const languagePrefix = new RegExp(\`^\${language}\\\\s*\`, 'i');
-                                        cleanCodeText = cleanCodeText.replace(languagePrefix, '');
-                                    }
-                                    
-                                    // 🔧 去重检查（只去除完全相同的代码）
-                                    if (cleanCodeText.trim() && !seenCodeTexts.has(cleanCodeText)) {
-                                        seenCodeTexts.add(cleanCodeText);
-                                        
-                                        contentBlocks.push({
-                                            type: 'code',
-                                            language: language || 'text',
-                                            code: cleanCodeText
-                                        });
-                                        
-                                        console.log(\`  ✅ 添加代码(\${language}): \${cleanCodeText.substring(0, 50)}...\`);
-                                    } else {
-                                        console.log(\`  ⚠️ 跳过重复代码块: \${cleanCodeText.substring(0, 30)}...\`);
-                                    }
-                                } else {
-                                    console.log(\`  ❓ 跳过未知元素类型: \${child.tagName}\`);
-                                }
-                            });
-                            
-                            return contentBlocks;
-                        }
-                        
-                        // 🔧 备用提取函数（如果找不到网格容器）
-                        function extractFromDirectChildren(contentArea, seenCodeTexts) {
-                            const contentBlocks = [];
-                            
-                            // 提取所有文本段落
-                            const textParagraphs = contentArea.querySelectorAll('p.whitespace-normal.break-words');
-                            const codeBlocks = contentArea.querySelectorAll('pre');
-                            
-                            console.log(\`备用提取: 找到 \${textParagraphs.length} 个文本段落, \${codeBlocks.length} 个代码块\`);
-                            
-                            // 创建一个包含所有元素的数组，按DOM顺序排序
-                            const allElements = [];
-                            
-                            textParagraphs.forEach(p => allElements.push({ type: 'text', element: p }));
-                            codeBlocks.forEach(pre => allElements.push({ type: 'code', element: pre }));
-                            
-                            // 按DOM中的实际顺序排序
-                            allElements.sort((a, b) => {
-                                const positionA = a.element.compareDocumentPosition(b.element);
-                                return positionA & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
-                            });
-                            
-                            // 处理排序后的元素
-                            allElements.forEach((item, index) => {
-                                if (item.type === 'text') {
-                                    const text = item.element.textContent.trim();
-                                    if (text) {
-                                        contentBlocks.push({
-                                            type: 'text',
-                                            text: text
-                                        });
-                                    }
-                                } else if (item.type === 'code') {
-                                    let language = '';
-                                    const codeElement = item.element.querySelector('code');
-                                    if (codeElement && codeElement.className) {
-                                        const match = codeElement.className.match(/language-([a-zA-Z0-9]+)/);
-                                        if (match) {
-                                            language = match[1];
-                                        }
-                                    }
-                                    
-                                    let rawCodeText = item.element.textContent || "";
-                                    let cleanCodeText = rawCodeText.replace(/Copy$/i, '').trim();
-                                    
-                                    if (language) {
-                                        const languagePrefix = new RegExp(\`^\${language}\\\\s*\`, 'i');
-                                        cleanCodeText = cleanCodeText.replace(languagePrefix, '');
-                                    }
-                                    
-                                    if (cleanCodeText.trim() && !seenCodeTexts.has(cleanCodeText)) {
-                                        seenCodeTexts.add(cleanCodeText);
-                                        
-                                        contentBlocks.push({
-                                            type: 'code',
-                                            language: language || 'text',
-                                            code: cleanCodeText
-                                        });
-                                    }
-                                }
-                            });
-                            
-                            return contentBlocks;
-                        }
-                        
-                        // Store content
-                        let content = {
-                            conversationTurns: [],
-                            uiElements: []
-                        };
-                        
-                        const mainContentArea = document.querySelector('div.flex-1.flex.flex-col.gap-3');
-                        if (!mainContentArea) {
-                            return { error: "Cannot find main content area" };
-                        }
-                        
-                        const conversationElements = Array.from(mainContentArea.children);
-                        console.log('找到对话元素数量:', conversationElements.length);
-                        
-                        let currentTurn = null;
-                        let turnIndex = 0;
-                        
-                        for (const element of conversationElements) {
-                            const isUserQuery = element.querySelector('.bg-bg-300');
-                            
-                            if (isUserQuery) {
-                                // If there was a previous turn, add it to the results
-                                if (currentTurn) {
-                                    content.conversationTurns.push(currentTurn);
-                                    turnIndex++;
+                                } catch (clickError) {
+                                    console.log('  ⚠️ 点击展开失败，使用预览代码');
                                 }
                                 
-                                let queryText = isUserQuery.textContent.trim();
-                                queryText = queryText.replace(/Edit$/, '').trim();
-                                queryText = queryText.replace(/^[A-Z\\s]*/, '');
-                                
-                                currentTurn = {
-                                    turnIndex: turnIndex,
-                                    query: queryText,
-                                    response: {
-                                        content: []
+                                // 方法2：如果点击失败，使用预览代码
+                                if (!fullCode) {
+                                    const previewElement = artifact.querySelector('.font-mono');
+                                    if (previewElement) {
+                                        fullCode = previewElement.textContent.trim();
+                                        console.log(\`  📝 使用预览代码: \${fullCode.length} 字符\`);
                                     }
-                                };
+                                }
                                 
-                                console.log(\`新的对话轮次 \${turnIndex}: \${queryText}\`);
-                            } else {
-                                if (!currentTurn) continue;
-                                
-                                const hasResponseContent = element.querySelector('.font-claude-message');
-                                
-                                if (hasResponseContent) {
-                                    console.log(\`处理Claude回复，按顺序解析内容\`);
-                                    
-                                    // 🔧 使用修复后的提取函数
-                                    const responseContent = extractResponseContentInOrder(element);
-                                    
-                                    // 将内容添加到当前轮次
-                                    currentTurn.response.content.push(...responseContent);
-                                    
-                                    console.log(\`当前轮次内容块数量: \${currentTurn.response.content.length}\`);
+                                if (fullCode) {
+                                    const markdownCode = \`\\\`\\\`\\\`\${language}\\n\${fullCode}\\n\\\`\\\`\\\`\`;
+                                    artifactCodes.push(markdownCode);
                                 }
                             }
                         }
                         
-                        // Add the last turn (if any)
-                        if (currentTurn) {
-                            content.conversationTurns.push(currentTurn);
-                        }
+                        // 🔧 将Artifact代码放在开头
+                        const finalParts = [...artifactCodes, ...contentParts];
                         
-                        console.log('内容提取完成，对话轮次数量:', content.conversationTurns.length);
-                        return content;
+                        console.log('内容提取完成:');
+                        console.log('- Artifact代码块:', artifactCodes.length);
+                        console.log('- 其他内容块:', contentParts.length);
+                        console.log('- 总内容块:', finalParts.length);
                         
-                    } catch (e) {
-                        console.error('提取过程中出错:', e);
-                        return { error: e.message, stack: e.stack };
+                        const finalContent = finalParts.join('\\n\\n');
+                        console.log('- 最终内容长度:', finalContent.length);
+                        
+                        return finalContent;
                     }
-                })()
-            `;
+                    
+                    // 主提取逻辑
+                    const content = { conversationTurns: [] };
+                    
+                    const mainContentArea = document.querySelector('div.flex-1.flex.flex-col.gap-3');
+                    if (!mainContentArea) {
+                        return { error: "Cannot find main content area" };
+                    }
+                    
+                    const conversationElements = Array.from(mainContentArea.children);
+                    console.log('找到对话元素数量:', conversationElements.length);
+                    
+                    let currentTurn = null;
+                    let turnIndex = 0;
+                    
+                    for (const element of conversationElements) {
+                        const isUserQuery = element.querySelector('.bg-bg-300');
+                        
+                        if (isUserQuery) {
+                            if (currentTurn) {
+                                content.conversationTurns.push(currentTurn);
+                                turnIndex++;
+                            }
+                            
+                            let queryText = isUserQuery.textContent.trim();
+                            queryText = queryText.replace(/Edit$/, '').trim();
+                            
+                            // 🔧 移除用户名前缀
+                            const userAvatar = element.querySelector('.rounded-full.font-bold');
+                            if (userAvatar) {
+                                const userName = userAvatar.textContent.trim();
+                                if (queryText.startsWith(userName)) {
+                                    queryText = queryText.substring(userName.length).trim();
+                                }
+                            }
+                            
+                            currentTurn = {
+                                turnIndex: turnIndex,
+                                query: queryText,
+                                response: null
+                            };
+                            
+                            console.log(\`新的对话轮次 \${turnIndex}: \${queryText.substring(0, 50)}...\`);
+                        } else {
+                            if (!currentTurn) continue;
+                            
+                            const hasResponseContent = element.querySelector('.font-claude-message');
+                            
+                            if (hasResponseContent) {
+                                console.log('提取Claude回复内容...');
+                                
+                                const responseText = await extractCompleteContent(element);
+                                currentTurn.response = responseText;
+                                
+                                console.log(\`✅ 回复内容长度: \${responseText.length} 字符\`);
+                            }
+                        }
+                    }
+                    
+                    if (currentTurn) {
+                        content.conversationTurns.push(currentTurn);
+                    }
+                    
+                    console.log('内容提取完成，对话轮次数量:', content.conversationTurns.length);
+                    return content;
+                    
+                } catch (e) {
+                    console.error('提取过程中出错:', e);
+                    return { error: e.message, stack: e.stack };
+                }
+            })()
+        `;
 
             // 执行脚本
             const result = await this.llmController.executeLLMScript(this.session, contentScript, {
-                awaitPromise: false,
-                timeout: 15000
+                awaitPromise: true,
+                timeout: 45000 // 增加超时时间，因为需要处理点击操作
             });
 
             if (result.success && result.result) {
                 const extractedContent = result.result.value || result.result;
 
-                // 检查是否有错误
                 if (extractedContent.error) {
                     throw new Error(extractedContent.error);
                 }
 
-                // 确保 conversationTurns 是数组
                 if (!extractedContent.conversationTurns || !Array.isArray(extractedContent.conversationTurns)) {
-                    console.warn('[Claude] 内容提取结果格式异常，使用默认结构');
+                    console.warn('[Claude] 内容提取结果格式异常');
                     extractedContent.conversationTurns = [];
                 }
 
                 console.log('[Claude] ✅ 页面内容提取完成');
                 console.log(`[Claude] 提取到 ${extractedContent.conversationTurns.length} 个对话轮次`);
 
-                // 输出每个对话轮次的详细信息
                 extractedContent.conversationTurns.forEach((turn, index) => {
-                    const textBlocks = turn.response.content.filter(c => c.type === 'text').length;
-                    const codeBlocks = turn.response.content.filter(c => c.type === 'code').length;
+                    const hasCode = turn.response && turn.response.includes('```');
                     console.log(`[Claude] 对话轮次 ${index}:`, {
                         query: turn.query?.substring(0, 50) + '...',
-                        totalContentBlocks: turn.response.content.length,
-                        textBlocks: textBlocks,
-                        codeBlocks: codeBlocks
+                        responseLength: turn.response?.length || 0,
+                        hasCode: hasCode
                     });
                 });
 
-                const formattedContent = await this.formatToOpenAIStyle(extractedContent);
+                const formattedContent = await this.formatToNativeAPIStyle(extractedContent);
                 return formattedContent;
             } else {
                 throw new Error('脚本执行失败: ' + (result.error || '未知错误'));
@@ -898,7 +1088,6 @@ export class ClaudeLLMPublisher {
             console.error('[Claude] 页面内容提取失败:', error.message);
             return {
                 error: error.message,
-                conversationTurns: [],
                 id: "chatcmpl-" + Date.now(),
                 created: Math.floor(Date.now() / 1000),
                 model: "Claude 4.0 Sonnet",
@@ -912,95 +1101,11 @@ export class ClaudeLLMPublisher {
             };
         }
     }
-
     /**
-     * 提取代码版本信息 - 保持原有实现
+     * 格式化为原生API标准格式
+     * 符合 OpenAI ChatGPT API 标准
      */
-    async extractCodeVersions() {
-        try {
-            const script = `
-            (async function() {
-                const codeVersions = new Map();
-                
-                // Find all code version buttons
-                const codeButtons = Array.from(document.querySelectorAll('button.flex.text-left.font-styrene.rounded-xl'));
-                const codeButtonsFiltered = codeButtons.filter(btn => 
-                    btn.textContent.includes('Code') && 
-                    (btn.textContent.includes('Version') || btn.textContent.includes('∙'))
-                );
-                
-                // Process each button sequentially
-                for (const button of codeButtonsFiltered) {
-                    try {
-                        const buttonText = button.textContent.trim();
-                        
-                        // Extract version information
-                        let versionLabel = "Version 1";
-                        if (buttonText.includes('Version')) {
-                            const versionMatch = buttonText.match(/Version\\s*(\\d+)/i);
-                            if (versionMatch) {
-                                versionLabel = \`Version \${versionMatch[1]}\`;
-                            }
-                        } else if (buttonText.includes('∙')) {
-                            const parts = buttonText.split('∙');
-                            if (parts.length > 1) {
-                                versionLabel = parts[1].trim();
-                            }
-                        }
-                        
-                        // Click the button to display code in sidebar
-                        button.click();
-                        
-                        // Wait for sidebar to update
-                        await new Promise(r => setTimeout(r, 500));
-                        
-                        // Extract code from the sidebar
-                        const sidebarCodeContainer = document.querySelector('.max-md\\\\:absolute.top-0.right-0.bottom-0.left-0.z-20');
-                        if (sidebarCodeContainer) {
-                            const codeElement = sidebarCodeContainer.querySelector('code.language-python');
-                            if (codeElement) {
-                                const fullCodeText = codeElement.textContent.trim();
-                                if (fullCodeText) {
-                                    // Store code with its version info
-                                    codeVersions.set(buttonText, {
-                                        language: 'python',
-                                        code: fullCodeText,
-                                        buttonLabel: buttonText,
-                                        version: versionLabel
-                                    });
-                                    console.log(\`Extracted code for: \${buttonText} (\${versionLabel})\`);
-                                }
-                            }
-                        }
-                    } catch (buttonError) {
-                        console.error("Error processing button:", buttonError);
-                    }
-                }
-                
-                return Array.from(codeVersions.entries());
-            })()
-        `;
-
-            const result = await this.llmController.executeLLMScript(this.session, script, {
-                awaitPromise: true,
-                timeout: 15000
-            });
-
-            if (result.success && Array.isArray(result.result)) {
-                console.log(`[Claude] 提取到 ${result.result.length} 个代码版本`);
-                return result.result;
-            } else {
-                console.log('[Claude] 未找到代码版本');
-                return [];
-            }
-
-        } catch (error) {
-            console.error('[Claude] 代码版本提取失败:', error.message);
-            return [];
-        }
-    }
-
-    async formatToOpenAIStyle(content) {
+    async formatToNativeAPIStyle(content) {
         try {
             const messages = [];
             const conversationId = await this.getChatId();
@@ -1015,28 +1120,16 @@ export class ClaudeLLMPublisher {
                     });
                 }
 
-                // 添加助手消息 - 新格式
-                if (turn.response && turn.response.content && turn.response.content.length > 0) {
-                    // 🔧 新的数据结构：分离文本和代码块
-                    const responseContent = {
-                        contentBlocks: turn.response.content,
-                        // 为了兼容性，也提供传统格式
-                        textBlocks: turn.response.content.filter(c => c.type === 'text').map(c => c.text),
-                        codeBlocks: turn.response.content.filter(c => c.type === 'code').map(c => ({
-                            language: c.language,
-                            code: c.code,
-                            type: 'inline'
-                        }))
-                    };
-
+                // 🔧 关键改进：助手消息直接使用字符串内容
+                if (turn.response) {
                     messages.push({
                         role: "assistant",
-                        content: responseContent
+                        content: turn.response // 直接使用提取的纯文本字符串
                     });
                 }
             }
 
-            // 返回OpenAI兼容格式
+            // 🔧 返回完全符合原生API标准的格式
             return {
                 id: "chatcmpl-" + (conversationId || Date.now()),
                 created: Math.floor(Date.now() / 1000),
@@ -1052,14 +1145,13 @@ export class ClaudeLLMPublisher {
             };
 
         } catch (error) {
-            console.error('[Claude] OpenAI格式转换失败:', error.message);
+            console.error('[Claude] 原生API格式转换失败:', error.message);
             return {
                 error: error.message,
                 messages: []
             };
         }
     }
-
     // ==================== 流式响应处理 ====================
 
     /**
