@@ -134,8 +134,7 @@ export class LLMRequestHandler {
     private async importLLMPlatforms(): Promise<LLMPlatforms> {
         const possiblePaths = [
             '../../../../automation/config/llm-platforms.js',
-            '../../../automation/config/llm-platforms.mjs',
-            './automation/config/llm-platforms.js'
+            '../../../../automation/config/llm-platforms.mjs'
         ];
 
         for (const modulePath of possiblePaths) {

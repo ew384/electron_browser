@@ -194,9 +194,8 @@ export class LLMSessionMapper {
      */
     private async importClaudePublisher(): Promise<ClaudePublisher | null> {
         const possiblePaths = [
-            '../../../../../../automation/engines/llm-publishers/claude-llm-publisher.js',
-            '../../../automation/engines/llm-publishers/claude-llm-publisher.mjs',
-            '../../../../automation/engines/llm-publishers/claude-llm-publisher.js'
+            '../../../../automation/engines/llm-publishers/claude-llm-publisher.js',
+            '../../../../automation/engines/llm-publishers/claude-llm-publisher.mjs'
         ];
 
         for (const modulePath of possiblePaths) {
