@@ -22,6 +22,8 @@
 │   ├── debug-page-elements.js
 │   ├── engines
 │   │   ├── douyin-video-publisher.js
+│   │   ├── downloaders
+│   │   │   └── douyin-downloader.js
 │   │   ├── llm-publishers
 │   │   │   └── claude-llm-publisher.js
 │   │   ├── multi-platform-engine.js
@@ -35,16 +37,16 @@
 │   │   └── package-lock.json
 │   ├── logs
 │   ├── output
-│   │   └── wechat-video-account_1748421858240_7ua5pcz7x-2025-06-16T02-28-34-247Z.json
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── README.md
 │   ├── test
-│   │   └── output
+│   │   ├── claude_api_test.sh
+│   │   ├── douyin_download_api.sh
+│   │   └── tts_api_test.sh
 │   ├── test-account.json
 │   ├── test-content.json
 │   ├── test-douyin.json
-│   ├── test_douyin.sh
 │   ├── test-template.json
 │   ├── test_wechat.sh
 │   ├── types
@@ -377,4 +379,4 @@
 │   └── vue.config.js
 └── yarn.lock
 
-118 directories, 259 files
+118 directories, 261 files
