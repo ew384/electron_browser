@@ -1,9 +1,5 @@
-/**
-     * 关闭下载标签页
-     * @param {string} accountId - 浏览器账号ID
-     * @param {string} tabId - 标签页ID
-     */// automation/engines/downloaders/douyin-downloader.js
-// 抖音视频下载器 - 参考发布器的标签页创建方式
+// automation/engines/downloaders/douyin-downloader.js
+// 抖音视频下载器 - 支持真实视频和音频+图片混合内容
 
 import fs from 'fs';
 import path from 'path';
@@ -14,92 +10,383 @@ export class DouyinDownloader {
     }
 
     /**
-     * 下载抖音视频主方法
-     * @param {string} douyinUrl - 抖音视频URL
+     * 下载抖音内容主方法（支持视频和音频+图片）
+     * @param {string} douyinUrl - 抖音内容URL
      * @param {string} outputDir - 输出目录
      * @returns {Object} 下载结果
      */
-    async downloadVideo(douyinUrl, outputDir = '/oper/work/endian/rpa-platform/downloads/douyin/') {
-        console.log(`📥 开始下载抖音视频: ${douyinUrl}`);
+    async downloadContent(douyinUrl, outputDir = './downloads/douyin/') {
+        console.log(`📥 开始下载抖音内容: ${douyinUrl}`);
 
         try {
-            // 1. 获取media组的浏览器实例
-            const browsers = await this.chromeController.electronAPI.getBrowserInstances();
-            const mediaBrowser = browsers.find(browser =>
-                browser.group === 'media' && browser.status === 'running'
-            );
-
-            if (!mediaBrowser) {
-                // 如果没有media组浏览器，使用任意运行中的浏览器
-                const runningBrowser = browsers.find(browser => browser.status === 'running');
-                if (!runningBrowser) {
-                    throw new Error('没有可用的运行中浏览器实例');
-                }
-                console.log(`⚠️ 未找到media组浏览器，使用: ${runningBrowser.accountId}`);
-                var browserInstance = runningBrowser;
-            } else {
-                console.log(`✅ 找到media组浏览器: ${mediaBrowser.accountId}`);
-                var browserInstance = mediaBrowser;
-            }
-
+            // 1. 获取浏览器实例
+            const browserInstance = await this._getBrowserInstance();
             console.log(`✅ 使用浏览器实例: ${browserInstance.accountId} (端口: ${browserInstance.debugPort})`);
 
-            // 2. 直接创建标签页导航到抖音视频页面
+            // 2. 创建下载标签页
             const tabResponse = await this._createDownloadTab(browserInstance.accountId, douyinUrl);
-
             if (!tabResponse.success) {
                 throw new Error(`创建下载标签页失败: ${tabResponse.error}`);
             }
-
             console.log(`✅ 下载标签页创建成功: ${tabResponse.tabId}`);
 
-            // 3. 等待视频页面加载完成，并尝试滚动触发视频加载
-            await this.delay(3000); // 先等待基本页面加载
-
-            // 执行页面滚动和交互，参考Python代码中的logic
-            await this._triggerVideoLoading(browserInstance.accountId, tabResponse.tabId);
-
-            // 再等待视频开始加载
+            // 3. 等待页面加载并分析内容
             await this.delay(5000);
+            const contentAnalysis = await this._analyzeContent(browserInstance.accountId, tabResponse.tabId);
 
-            // 4. 提取视频真实下载URL
-            const videoUrl = await this._extractVideoUrlFromTab(browserInstance.accountId, tabResponse.tabId);
+            // 4. 根据内容类型执行不同的下载策略
+            let downloadResult;
+            if (contentAnalysis.contentType === 'real_video') {
+                downloadResult = await this._downloadVideo(contentAnalysis, outputDir);
+            } else if (contentAnalysis.contentType === 'audio_image_mix') {
+                downloadResult = await this._downloadAudioImages(contentAnalysis, outputDir, douyinUrl);
+            } else {
+                throw new Error(`不支持的内容类型: ${contentAnalysis.contentType}`);
+            }
 
-            // 5. 下载视频文件
-            const fileName = this._generateFileName();
-            const filePath = await this._downloadVideoFile(videoUrl, outputDir, fileName);
-
-            // 6. 清理标签页
+            // 5. 清理标签页
             await this._closeDownloadTab(browserInstance.accountId, tabResponse.tabId);
 
-            console.log(`✅ 抖音视频下载成功: ${filePath}`);
-
-            return {
-                success: true,
-                filePath: filePath,
-                fileName: fileName,
-                originalUrl: douyinUrl,
-                videoUrl: videoUrl,
-                fileSize: fs.statSync(filePath).size
-            };
+            console.log(`✅ 抖音内容下载成功: ${downloadResult.summary}`);
+            return downloadResult;
 
         } catch (error) {
-            console.error(`❌ 抖音视频下载失败: ${error.message}`);
+            console.error(`❌ 抖音内容下载失败: ${error.message}`);
             throw error;
         }
     }
 
     /**
-     * 创建下载专用标签页
+     * 分析抖音内容类型和提取下载URL
      * @param {string} accountId - 浏览器账号ID
-     * @param {string} douyinUrl - 抖音视频URL
-     * @returns {Object} 标签页创建结果
+     * @param {string} tabId - 标签页ID
+     * @returns {Object} 内容分析结果
+     */
+    async _analyzeContent(accountId, tabId) {
+        console.log(`🔍 分析抖音内容类型...`);
+
+        const analysisScript = `
+            (function() {
+                console.log('🔍 开始分析抖音内容...');
+                
+                const result = {
+                    contentType: 'unknown',
+                    videoData: null,
+                    audioData: null,
+                    imageData: [],
+                    isAudioImageMix: false
+                };
+                
+                // 1. 分析video元素
+                const videos = document.querySelectorAll('video');
+                console.log(\`找到 \${videos.length} 个video元素\`);
+                
+                for (let i = 0; i < videos.length; i++) {
+                    const video = videos[i];
+                    const currentSrc = video.currentSrc;
+                    
+                    console.log(\`Video \${i + 1}:\`);
+                    console.log(\`  currentSrc: \${currentSrc || '无'}\`);
+                    console.log(\`  duration: \${video.duration}\`);
+                    console.log(\`  size: \${video.videoWidth}x\${video.videoHeight}\`);
+                    
+                    if (currentSrc && !currentSrc.startsWith('blob:')) {
+                        // 检查是否为音频文件
+                        if (currentSrc.includes('.mp3') || currentSrc.includes('.m4a') || currentSrc.includes('.aac')) {
+                            console.log('🎵 检测到音频内容');
+                            result.audioData = {
+                                url: currentSrc,
+                                duration: video.duration,
+                                confidence: 90
+                            };
+                            result.isAudioImageMix = true;
+                        }
+                        // 检查是否为真实视频
+                        else if (video.videoWidth > 0 && video.videoHeight > 0 && video.duration > 0) {
+                            console.log('📹 检测到真实视频');
+                            result.videoData = {
+                                url: currentSrc,
+                                duration: video.duration,
+                                width: video.videoWidth,
+                                height: video.videoHeight,
+                                confidence: 85
+                            };
+                        }
+                    }
+                }
+                
+                // 2. 如果是音频内容，提取相关图片
+                if (result.isAudioImageMix) {
+                    console.log('🖼️ 提取音频内容相关图片...');
+                    
+                    const resourceEntries = performance.getEntriesByType('resource');
+                    const contentImages = [];
+                    
+                    resourceEntries.forEach(entry => {
+                        const url = entry.name;
+                        const urlLower = url.toLowerCase();
+                        
+                        if ((urlLower.includes('.jpg') || urlLower.includes('.jpeg') || 
+                             urlLower.includes('.png') || urlLower.includes('.webp')) &&
+                            url.includes('p3-pc-sign.douyinpic.com/tos-cn-i-0813')) {
+                            
+                            contentImages.push({
+                                url: url,
+                                confidence: 90,
+                                size: entry.transferSize || 0
+                            });
+                        } else if (urlLower.includes('.jpg') || urlLower.includes('.jpeg') || 
+                                   urlLower.includes('.png') || urlLower.includes('.webp')) {
+                            if (url.includes('douyinpic.com') && 
+                                !url.includes('avatar') && 
+                                !url.includes('icon')) {
+                                contentImages.push({
+                                    url: url,
+                                    confidence: 60,
+                                    size: entry.transferSize || 0
+                                });
+                            }
+                        }
+                    });
+                    
+                    // 按置信度排序
+                    contentImages.sort((a, b) => b.confidence - a.confidence);
+                    result.imageData = contentImages.slice(0, 10); // 最多取10张图片
+                    
+                    console.log(\`提取到 \${result.imageData.length} 张内容图片\`);
+                }
+                
+                // 3. 确定内容类型
+                if (result.videoData) {
+                    result.contentType = 'real_video';
+                } else if (result.audioData && result.imageData.length > 0) {
+                    result.contentType = 'audio_image_mix';
+                } else if (result.audioData) {
+                    result.contentType = 'audio_only';
+                } else {
+                    result.contentType = 'unknown';
+                }
+                
+                console.log(\`📋 内容分析完成: \${result.contentType}\`);
+                
+                return result;
+            })()
+        `;
+
+        const response = await this.chromeController.httpRequest(
+            `http://localhost:9528/api/browser/${accountId}/tabs/${tabId}/execute-script`,
+            {
+                method: 'POST',
+                body: JSON.stringify({
+                    script: analysisScript,
+                    returnByValue: true,
+                    awaitPromise: false
+                })
+            }
+        );
+
+        if (!response.success || !response.result?.value) {
+            throw new Error('内容分析失败');
+        }
+
+        const analysis = response.result.value;
+        console.log(`📊 内容分析结果: ${analysis.contentType}`);
+
+        if (analysis.contentType === 'audio_image_mix') {
+            console.log(`🎵 音频: ${analysis.audioData?.url?.substring(0, 80)}...`);
+            console.log(`🖼️ 图片: ${analysis.imageData?.length} 张`);
+        } else if (analysis.contentType === 'real_video') {
+            console.log(`📹 视频: ${analysis.videoData?.url?.substring(0, 80)}...`);
+        }
+
+        return analysis;
+    }
+
+    /**
+     * 下载真实视频文件
+     * @param {Object} contentAnalysis - 内容分析结果
+     * @param {string} outputDir - 输出目录
+     * @returns {Object} 下载结果
+     */
+    async _downloadVideo(contentAnalysis, outputDir) {
+        console.log(`📹 开始下载视频文件...`);
+
+        const videoData = contentAnalysis.videoData;
+        const videoDir = path.join(outputDir, 'video');
+
+        // 确保目录存在
+        if (!fs.existsSync(videoDir)) {
+            fs.mkdirSync(videoDir, { recursive: true });
+        }
+
+        // 生成文件名
+        const fileName = this._generateFileName('video', 'mp4');
+        const filePath = path.join(videoDir, fileName);
+
+        // 下载视频文件
+        await this._downloadFile(videoData.url, filePath);
+        const fileSize = fs.statSync(filePath).size;
+
+        return {
+            success: true,
+            type: 'video',
+            files: [{
+                fileName: fileName,
+                filePath: filePath,
+                fileSize: fileSize,
+                url: videoData.url
+            }],
+            summary: `视频文件: ${fileName}`,
+            details: {
+                duration: videoData.duration,
+                resolution: `${videoData.width}x${videoData.height}`,
+                fileSize: this._formatFileSize(fileSize)
+            }
+        };
+    }
+
+    /**
+     * 下载音频+图片混合内容
+     * @param {Object} contentAnalysis - 内容分析结果
+     * @param {string} outputDir - 输出目录
+     * @param {string} originalUrl - 原始抖音URL
+     * @returns {Object} 下载结果
+     */
+    async _downloadAudioImages(contentAnalysis, outputDir, originalUrl) {
+        console.log(`🎵 开始下载音频+图片内容...`);
+
+        const audioData = contentAnalysis.audioData;
+        const imageData = contentAnalysis.imageData;
+
+        // 创建时间戳文件夹
+        const timestamp = this._generateTimestamp();
+        const articleDir = path.join(outputDir, 'article', timestamp);
+
+        if (!fs.existsSync(articleDir)) {
+            fs.mkdirSync(articleDir, { recursive: true });
+        }
+
+        console.log(`📁 创建文件夹: ${articleDir}`);
+
+        const downloadedFiles = [];
+
+        // 1. 下载音频文件
+        if (audioData) {
+            console.log(`🎵 下载音频文件...`);
+            const audioFileName = `audio.mp3`;
+            const audioFilePath = path.join(articleDir, audioFileName);
+
+            await this._downloadFile(audioData.url, audioFilePath);
+            const audioFileSize = fs.statSync(audioFilePath).size;
+
+            downloadedFiles.push({
+                type: 'audio',
+                fileName: audioFileName,
+                filePath: audioFilePath,
+                fileSize: audioFileSize,
+                url: audioData.url
+            });
+
+            console.log(`✅ 音频下载完成: ${audioFileName} (${this._formatFileSize(audioFileSize)})`);
+        }
+
+        // 2. 下载图片文件
+        if (imageData && imageData.length > 0) {
+            console.log(`🖼️ 下载 ${imageData.length} 张图片...`);
+
+            for (let i = 0; i < imageData.length; i++) {
+                const image = imageData[i];
+                const imageExt = this._getFileExtension(image.url) || 'jpg';
+                const imageFileName = `image_${i + 1}.${imageExt}`;
+                const imageFilePath = path.join(articleDir, imageFileName);
+
+                try {
+                    await this._downloadFile(image.url, imageFilePath);
+                    const imageFileSize = fs.statSync(imageFilePath).size;
+
+                    downloadedFiles.push({
+                        type: 'image',
+                        fileName: imageFileName,
+                        filePath: imageFilePath,
+                        fileSize: imageFileSize,
+                        url: image.url
+                    });
+
+                    console.log(`✅ 图片${i + 1}下载完成: ${imageFileName} (${this._formatFileSize(imageFileSize)})`);
+                } catch (error) {
+                    console.warn(`⚠️ 图片${i + 1}下载失败: ${error.message}`);
+                }
+            }
+        }
+
+        // 3. 保存元数据
+        const metadataPath = path.join(articleDir, 'metadata.json');
+        const metadata = {
+            originalUrl: originalUrl,
+            downloadTime: new Date().toISOString(),
+            contentType: 'audio_image_mix',
+            audioInfo: audioData ? {
+                duration: audioData.duration,
+                url: audioData.url
+            } : null,
+            imageCount: imageData ? imageData.length : 0,
+            files: downloadedFiles.map(f => ({
+                type: f.type,
+                fileName: f.fileName,
+                fileSize: f.fileSize
+            }))
+        };
+
+        fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+
+        const totalSize = downloadedFiles.reduce((sum, file) => sum + file.fileSize, 0);
+
+        return {
+            success: true,
+            type: 'audio_image_mix',
+            folder: articleDir,
+            files: downloadedFiles,
+            summary: `音频+图片: ${downloadedFiles.filter(f => f.type === 'audio').length} 音频, ${downloadedFiles.filter(f => f.type === 'image').length} 图片`,
+            details: {
+                folderName: timestamp,
+                totalFiles: downloadedFiles.length,
+                totalSize: this._formatFileSize(totalSize),
+                audioDuration: audioData?.duration,
+                imageCount: imageData?.length || 0
+            }
+        };
+    }
+
+    /**
+     * 获取可用的浏览器实例
+     */
+    async _getBrowserInstance() {
+        const browsers = await this.chromeController.electronAPI.getBrowserInstances();
+
+        // 优先选择media组浏览器
+        let browserInstance = browsers.find(browser =>
+            browser.group === 'media' && browser.status === 'running'
+        );
+
+        // 如果没有media组，选择任意运行中的浏览器
+        if (!browserInstance) {
+            browserInstance = browsers.find(browser => browser.status === 'running');
+        }
+
+        if (!browserInstance) {
+            throw new Error('没有可用的运行中浏览器实例');
+        }
+
+        return browserInstance;
+    }
+
+    /**
+     * 创建下载专用标签页
      */
     async _createDownloadTab(accountId, douyinUrl) {
         console.log(`🔄 创建下载标签页: ${douyinUrl}`);
 
         try {
-            // 直接调用浏览器API创建标签页并导航
             const response = await this.chromeController.httpRequest(
                 `http://localhost:9528/api/browser/${accountId}/tabs`,
                 {
@@ -132,456 +419,8 @@ export class DouyinDownloader {
     }
 
     /**
-     * 从标签页提取视频URL - 使用CDP方法（参考Python逻辑）
-     * @param {string} accountId - 浏览器账号ID
-     * @param {string} tabId - 标签页ID
-     * @returns {string} 视频下载URL
+     * 关闭下载标签页
      */
-    async _extractVideoUrlFromTab(accountId, tabId) {
-        console.log(`🔍 从标签页提取视频URL: ${tabId}`);
-
-        try {
-            // 方法1: 启用CDP网络监听（关键！参考Python代码）
-            console.log('🌐 启用CDP网络监听...');
-            await this._enableCDPNetworkMonitoring(accountId, tabId);
-
-            // 方法2: 触发页面交互，确保视频开始加载
-            await this._triggerVideoPlayback(accountId, tabId);
-
-            // 方法3: 等待并收集网络请求
-            console.log('⏳ 等待网络请求...');
-            await this.delay(3000);
-
-            // 方法4: 从多个来源提取URL
-            const videoUrl = await this._extractFromMultipleSources(accountId, tabId);
-
-            return videoUrl;
-
-        } catch (error) {
-            console.error(`❌ 视频URL提取失败: ${error.message}`);
-            throw error;
-        }
-    }
-
-    /**
-     * 启用CDP网络监听（参考Python的execute_cdp_cmd逻辑）
-     */
-    async _enableCDPNetworkMonitoring(accountId, tabId) {
-        const enableScript = `
-            (function() {
-                return new Promise((resolve) => {
-                    try {
-                        console.log('🔧 启用网络监听...');
-                        
-                        // 存储捕获的请求
-                        window._videoRequests = [];
-                        
-                        // 方法1: 拦截fetch（类似CDP Network.enable）
-                        if (!window._fetchIntercepted) {
-                            const originalFetch = window.fetch;
-                            window.fetch = function(...args) {
-                                const url = args[0];
-                                if (typeof url === 'string' && _isVideoUrl(url)) {
-                                    console.log('🎥 Fetch拦截到视频URL:', url);
-                                    window._videoRequests.push({
-                                        type: 'fetch',
-                                        url: url,
-                                        timestamp: Date.now()
-                                    });
-                                }
-                                return originalFetch.apply(this, args);
-                            };
-                            window._fetchIntercepted = true;
-                        }
-                        
-                        // 方法2: 拦截XHR请求
-                        if (!window._xhrIntercepted) {
-                            const originalOpen = XMLHttpRequest.prototype.open;
-                            XMLHttpRequest.prototype.open = function(method, url, ...args) {
-                                if (typeof url === 'string' && _isVideoUrl(url)) {
-                                    console.log('🎥 XHR拦截到视频URL:', url);
-                                    window._videoRequests.push({
-                                        type: 'xhr',
-                                        url: url,
-                                        timestamp: Date.now()
-                                    });
-                                }
-                                return originalOpen.apply(this, arguments);
-                            };
-                            window._xhrIntercepted = true;
-                        }
-                        
-                        // 方法3: Performance Observer（类似Python的performance entries）
-                        if (!window._performanceObserver) {
-                            const observer = new PerformanceObserver((list) => {
-                                for (const entry of list.getEntries()) {
-                                    if (entry.name && _isVideoUrl(entry.name)) {
-                                        console.log('🎥 Performance捕获到视频URL:', entry.name);
-                                        window._videoRequests.push({
-                                            type: 'performance',
-                                            url: entry.name,
-                                            timestamp: Date.now(),
-                                            duration: entry.duration
-                                        });
-                                    }
-                                }
-                            });
-                            observer.observe({entryTypes: ['resource']});
-                            window._performanceObserver = observer;
-                        }
-                        
-                        // 视频URL检测函数
-                        function _isVideoUrl(url) {
-                            if (!url || typeof url !== 'string') return false;
-                            
-                            const urlLower = url.toLowerCase();
-                            
-                            // 抖音视频特征（更新后的检测规则）
-                            const videoIndicators = [
-                                '.mp4',
-                                'douyinstatic.com',
-                                'uuu_',
-                                '/obj/douyin-pc-web/',
-                                'lf-douyin-pc-web',
-                                'douyinvod.com',
-                                'bytedance.com'
-                            ];
-                            
-                            const hasVideoIndicator = videoIndicators.some(indicator => 
-                                urlLower.includes(indicator));
-                            
-                            // 排除音频和其他文件
-                            const excludePatterns = [
-                                '.mp3', '.aac', '.m4a',
-                                '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg',
-                                '.woff', '.ttf', '.eot', '.json', '.xml', '.html', '.webp'
-                            ];
-                            
-                            const hasExcludePattern = excludePatterns.some(pattern => 
-                                urlLower.includes(pattern));
-                            
-                            return hasVideoIndicator && !hasExcludePattern;
-                        }
-                        
-                        resolve({ success: true, message: 'CDP网络监听已启用' });
-                        
-                    } catch (e) {
-                        resolve({ success: false, error: e.message });
-                    }
-                });
-            })()
-        `;
-
-        const response = await this.chromeController.httpRequest(
-            `http://localhost:9528/api/browser/${accountId}/tabs/${tabId}/execute-script`,
-            {
-                method: 'POST',
-                body: JSON.stringify({
-                    script: enableScript,
-                    returnByValue: true,
-                    awaitPromise: true
-                })
-            }
-        );
-
-        if (response.success) {
-            console.log('✅ CDP网络监听启用成功');
-        } else {
-            console.warn('⚠️ CDP网络监听启用失败');
-        }
-    }
-
-    /**
-     * 触发视频播放（参考Python代码的交互逻辑）
-     */
-    async _triggerVideoPlayback(accountId, tabId) {
-        const playbackScript = `
-            (function() {
-                try {
-                    console.log('🎬 触发视频播放...');
-                    
-                    // 1. 滚动页面（参考Python代码）
-                    window.scrollTo(0, 300);
-                    
-                    // 2. 查找并播放所有video元素
-                    const videos = document.querySelectorAll('video');
-                    console.log(\`找到 \${videos.length} 个video元素\`);
-                    
-                    videos.forEach((video, index) => {
-                        console.log(\`处理video \${index + 1}\`);
-                        
-                        // 点击video元素
-                        video.click();
-                        
-                        // 尝试播放
-                        if (video.paused) {
-                            video.play().catch(e => 
-                                console.log(\`播放失败: \${e.message}\`));
-                        }
-                        
-                        // 触发loadstart事件（可能触发网络请求）
-                        video.load();
-                    });
-                    
-                    // 3. 查找播放按钮
-                    const playSelectors = [
-                        '[data-e2e="video-play-button"]',
-                        '.play-button',
-                        '[aria-label*="播放"]',
-                        '[aria-label*="play"]',
-                        '.video-play-icon',
-                        '.play-icon'
-                    ];
-                    
-                    playSelectors.forEach(selector => {
-                        const buttons = document.querySelectorAll(selector);
-                        buttons.forEach(button => {
-                            console.log(\`点击播放按钮: \${selector}\`);
-                            button.click();
-                        });
-                    });
-                    
-                    // 4. 触发鼠标事件
-                    const videoContainers = document.querySelectorAll(
-                        '[data-e2e="video-container"], .video-container, .video-player'
-                    );
-                    videoContainers.forEach(container => {
-                        container.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-                        container.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-                    });
-                    
-                    return { success: true };
-                    
-                } catch (e) {
-                    return { success: false, error: e.message };
-                }
-            })()
-        `;
-
-        await this.chromeController.httpRequest(
-            `http://localhost:9528/api/browser/${accountId}/tabs/${tabId}/execute-script`,
-            {
-                method: 'POST',
-                body: JSON.stringify({
-                    script: playbackScript,
-                    returnByValue: true
-                })
-            }
-        );
-    }
-
-    /**
-     * 从多个来源提取视频URL（参考Python代码的多方法组合）
-     */
-    async _extractFromMultipleSources(accountId, tabId) {
-        const extractScript = `
-            (function() {
-                return new Promise((resolve) => {
-                    try {
-                        console.log('🔍 从多个来源提取视频URL...');
-                        
-                        let foundUrls = [];
-                        
-                        // 来源1: 检查拦截到的请求
-                        if (window._videoRequests && window._videoRequests.length > 0) {
-                            console.log(\`来源1: 拦截请求 - 找到 \${window._videoRequests.length} 个\`);
-                            foundUrls = foundUrls.concat(
-                                window._videoRequests.map(req => req.url)
-                            );
-                        }
-                        
-                        // 来源2: Performance API
-                        const resourceEntries = performance.getEntriesByType('resource');
-                        const performanceUrls = resourceEntries
-                            .map(entry => entry.name)
-                            .filter(url => {
-                                const urlLower = url.toLowerCase();
-                                return (urlLower.includes('douyinstatic.com') && 
-                                       urlLower.includes('.mp4')) ||
-                                       urlLower.includes('uuu_265.mp4') ||
-                                       (urlLower.includes('lf-douyin-pc-web') && 
-                                        urlLower.includes('.mp4'));
-                            });
-                        
-                        if (performanceUrls.length > 0) {
-                            console.log(\`来源2: Performance API - 找到 \${performanceUrls.length} 个\`);
-                            foundUrls = foundUrls.concat(performanceUrls);
-                        }
-                        
-                        // 来源3: 检查video元素的src
-                        const videos = document.querySelectorAll('video');
-                        videos.forEach(video => {
-                            if (video.src && video.src.includes('.mp4')) {
-                                console.log('来源3: Video.src -', video.src);
-                                foundUrls.push(video.src);
-                            }
-                            if (video.currentSrc && video.currentSrc.includes('.mp4')) {
-                                console.log('来源3: Video.currentSrc -', video.currentSrc);
-                                foundUrls.push(video.currentSrc);
-                            }
-                        });
-                        
-                        // 去重和排序
-                        const uniqueUrls = [...new Set(foundUrls)];
-                        const sortedUrls = uniqueUrls.sort((a, b) => {
-                            // 优先级: lf-douyin-pc-web > douyinstatic > 其他
-                            const aScore = a.includes('lf-douyin-pc-web') ? 3 : 
-                                          a.includes('douyinstatic') ? 2 : 1;
-                            const bScore = b.includes('lf-douyin-pc-web') ? 3 : 
-                                          b.includes('douyinstatic') ? 2 : 1;
-                            return bScore - aScore;
-                        });
-                        
-                        console.log(\`总共找到 \${sortedUrls.length} 个候选URL\`);
-                        sortedUrls.forEach((url, i) => {
-                            console.log(\`  \${i + 1}. \${url.substring(0, 80)}...\`);
-                        });
-                        
-                        if (sortedUrls.length > 0) {
-                            resolve({
-                                success: true,
-                                videoUrl: sortedUrls[0],
-                                allUrls: sortedUrls,
-                                method: 'multi_source_cdp'
-                            });
-                        } else {
-                            resolve({
-                                success: false,
-                                error: '未找到视频URL',
-                                debug: {
-                                    interceptedRequests: window._videoRequests ? window._videoRequests.length : 0,
-                                    performanceEntries: resourceEntries.length,
-                                    videoElements: videos.length
-                                }
-                            });
-                        }
-                        
-                    } catch (e) {
-                        resolve({
-                            success: false,
-                            error: e.message,
-                            stack: e.stack
-                        });
-                    }
-                });
-            })()
-        `;
-
-        const response = await this.chromeController.httpRequest(
-            `http://localhost:9528/api/browser/${accountId}/tabs/${tabId}/execute-script`,
-            {
-                method: 'POST',
-                body: JSON.stringify({
-                    script: extractScript,
-                    returnByValue: true,
-                    awaitPromise: true
-                })
-            }
-        );
-
-        if (!response.success) {
-            throw new Error(response.error);
-        }
-
-        const extractResult = response.result.value;
-
-        if (!extractResult.success) {
-            throw new Error(`视频URL提取失败: ${extractResult.error || '未找到视频URL'}`);
-        }
-
-        console.log(`✅ 视频URL提取成功，使用方法: ${extractResult.method}`);
-        return extractResult.videoUrl;
-    }
-
-    /**
-     * 触发视频加载（参考Python代码逻辑）
-     * @param {string} accountId - 浏览器账号ID
-     * @param {string} tabId - 标签页ID
-     */
-    async _triggerVideoLoading(accountId, tabId) {
-        console.log(`🔄 触发视频加载和交互...`);
-
-        const triggerScript = `
-            (function() {
-                try {
-                    console.log('🔄 执行页面交互触发视频加载...');
-                    
-                    // 1. 滚动页面，类似Python代码中的滚动逻辑
-                    window.scrollTo(0, 300);
-                    console.log('✅ 页面已滚动');
-                    
-                    // 2. 查找并点击视频区域
-                    const videoElements = document.querySelectorAll('video');
-                    console.log(\`找到 \${videoElements.length} 个video元素\`);
-                    
-                    videoElements.forEach((video, index) => {
-                        console.log(\`处理第 \${index + 1} 个video元素\`);
-                        
-                        // 尝试播放视频
-                        if (video.paused) {
-                            video.play().catch(e => console.log(\`播放失败: \${e.message}\`));
-                        }
-                        
-                        // 触发交互事件
-                        video.click();
-                        
-                        // 检查video属性
-                        console.log(\`Video \${index + 1} 信息:\`);
-                        console.log(\`  src: \${video.src || '无'}\`);
-                        console.log(\`  currentSrc: \${video.currentSrc || '无'}\`);
-                        console.log(\`  readyState: \${video.readyState}\`);
-                        console.log(\`  networkState: \${video.networkState}\`);
-                    });
-                    
-                    // 3. 查找可能的播放按钮并点击
-                    const playButtons = document.querySelectorAll('[data-e2e="video-play-button"], .play-button, [aria-label*="播放"], [aria-label*="play"]');
-                    console.log(\`找到 \${playButtons.length} 个可能的播放按钮\`);
-                    
-                    playButtons.forEach((button, index) => {
-                        console.log(\`点击播放按钮 \${index + 1}\`);
-                        button.click();
-                    });
-                    
-                    // 4. 触发鼠标事件，模拟用户交互
-                    const videoContainers = document.querySelectorAll('[data-e2e="video-container"], .video-container, .video-player');
-                    videoContainers.forEach((container, index) => {
-                        console.log(\`触发容器 \${index + 1} 的鼠标事件\`);
-                        container.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-                        container.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-                    });
-                    
-                    return { success: true, message: '页面交互完成' };
-                    
-                } catch (e) {
-                    console.error('页面交互异常:', e);
-                    return { success: false, error: e.message };
-                }
-            })()
-        `;
-
-        try {
-            const response = await this.chromeController.httpRequest(
-                `http://localhost:9528/api/browser/${accountId}/tabs/${tabId}/execute-script`,
-                {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        script: triggerScript,
-                        returnByValue: true,
-                        awaitPromise: false
-                    })
-                }
-            );
-
-            if (response.success) {
-                console.log(`✅ 页面交互触发完成`);
-            } else {
-                console.warn(`⚠️ 页面交互触发失败: ${response.error}`);
-            }
-
-        } catch (error) {
-            console.warn(`⚠️ 页面交互触发异常: ${error.message}`);
-        }
-    }
     async _closeDownloadTab(accountId, tabId) {
         try {
             await this.chromeController.httpRequest(
@@ -595,115 +434,128 @@ export class DouyinDownloader {
     }
 
     /**
-     * 下载视频文件
-     * @param {string} videoUrl - 视频下载URL
-     * @param {string} outputDir - 输出目录
-     * @param {string} fileName - 文件名
-     * @returns {string} 文件完整路径
+     * 下载文件到本地
+     * @param {string} url - 文件URL
+     * @param {string} filePath - 本地文件路径
      */
-    async _downloadVideoFile(videoUrl, outputDir, fileName) {
-        console.log(`📥 开始下载视频文件: ${fileName}`);
+    async _downloadFile(url, filePath) {
+        console.log(`📥 下载文件: ${path.basename(filePath)}`);
 
-        try {
-            // 确保输出目录存在
-            if (!fs.existsSync(outputDir)) {
-                fs.mkdirSync(outputDir, { recursive: true });
-                console.log(`✅ 创建输出目录: ${outputDir}`);
-            }
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Referer': 'https://www.douyin.com/',
+            'sec-fetch-dest': 'audio',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'cross-site'
+        };
 
-            const filePath = path.join(outputDir, fileName);
+        const response = await fetch(url, {
+            headers: headers,
+            method: 'GET'
+        });
 
-            // 设置下载请求的headers
-            const headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Referer': 'https://www.douyin.com/',
-                'sec-fetch-dest': 'video',
-                'sec-fetch-mode': 'cors',
-                'sec-fetch-site': 'cross-site'
-            };
-
-            // 使用fetch下载文件
-            const response = await fetch(videoUrl, {
-                headers: headers,
-                method: 'GET'
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const totalSize = parseInt(response.headers.get('content-length') || '0');
-            console.log(`📊 文件大小: ${this._formatFileSize(totalSize)}`);
-
-            // 创建写入流
-            const fileStream = fs.createWriteStream(filePath);
-            let downloadedSize = 0;
-
-            // 读取响应流并写入文件
-            const reader = response.body.getReader();
-
-            while (true) {
-                const { done, value } = await reader.read();
-
-                if (done) break;
-
-                fileStream.write(value);
-                downloadedSize += value.length;
-
-                // 显示下载进度
-                if (totalSize > 0) {
-                    const progress = Math.round((downloadedSize / totalSize) * 100);
-                    process.stdout.write(`\r📥 下载进度: ${progress}% (${this._formatFileSize(downloadedSize)}/${this._formatFileSize(totalSize)})`);
-                }
-            }
-
-            fileStream.end();
-            console.log(`\n✅ 视频文件下载完成: ${filePath}`);
-
-            return filePath;
-
-        } catch (error) {
-            console.error(`❌ 视频文件下载失败: ${error.message}`);
-            throw new Error(`视频下载失败: ${error.message}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
+
+        const totalSize = parseInt(response.headers.get('content-length') || '0');
+        const fileStream = fs.createWriteStream(filePath);
+        let downloadedSize = 0;
+
+        const reader = response.body.getReader();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            fileStream.write(value);
+            downloadedSize += value.length;
+
+            // 显示进度
+            if (totalSize > 0) {
+                const progress = Math.round((downloadedSize / totalSize) * 100);
+                process.stdout.write(`\r📥 下载进度: ${progress}% (${this._formatFileSize(downloadedSize)}/${this._formatFileSize(totalSize)})`);
+            }
+        }
+
+        fileStream.end();
+        console.log(`\n✅ 文件下载完成: ${filePath}`);
     }
 
     /**
-     * 生成基于时间戳的文件名
+     * 生成文件名
+     * @param {string} type - 文件类型 ('video', 'audio', 'image')
+     * @param {string} ext - 文件扩展名
      * @returns {string} 文件名
      */
-    _generateFileName() {
+    _generateFileName(type, ext) {
         const now = new Date();
         const timestamp = now.toISOString()
             .replace(/[-:]/g, '')
             .replace(/\..+/, '')
             .replace('T', '_');
-
-        return `douyin_${timestamp}.mp4`;
+        return `douyin_${type}_${timestamp}.${ext}`;
     }
 
     /**
-     * 格式化文件大小显示
+     * 生成时间戳文件夹名
+     * @returns {string} 时间戳
+     */
+    _generateTimestamp() {
+        const now = new Date();
+        return now.toISOString()
+            .replace(/[-:]/g, '')
+            .replace(/\..+/, '')
+            .replace('T', '_');
+    }
+
+    /**
+     * 获取文件扩展名
+     * @param {string} url - 文件URL
+     * @returns {string} 扩展名
+     */
+    _getFileExtension(url) {
+        try {
+            const urlObj = new URL(url);
+            const pathname = urlObj.pathname;
+            const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
+            return match ? match[1] : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * 格式化文件大小
      * @param {number} bytes - 字节数
      * @returns {string} 格式化后的大小
      */
     _formatFileSize(bytes) {
         if (bytes === 0) return '0 B';
-
         const k = 1024;
         const sizes = ['B', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     /**
      * 延迟工具方法
      * @param {number} ms - 延迟毫秒数
-     * @returns {Promise} Promise对象
      */
     async delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // ==================== 兼容性方法 ====================
+
+    /**
+     * 兼容原有的downloadVideo方法
+     * @param {string} douyinUrl - 抖音URL
+     * @param {string} outputDir - 输出目录
+     * @returns {Object} 下载结果
+     */
+    async downloadVideo(douyinUrl, outputDir) {
+        return this.downloadContent(douyinUrl, outputDir);
     }
 }
