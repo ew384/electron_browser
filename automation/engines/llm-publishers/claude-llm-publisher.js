@@ -62,9 +62,8 @@ export class ClaudeLLMPublisher {
             `;
 
             const result = await this.llmController.executeLLMScript(this.session, script);
-
-            if (result.success && result.result) {
-                const checkResult = result.result.value || result.result;
+            const checkResult = result.result?.value || result.result;
+            if (checkResult && typeof checkResult === 'object') {
                 this.loggedIn = checkResult.loggedIn;
                 console.log(`[Claude] 登录状态: ${this.loggedIn ? '✅已登录' : '❌未登录'} (${result.result.method})`);
                 return this.loggedIn;
@@ -173,8 +172,13 @@ export class ClaudeLLMPublisher {
             // 检查当前URL是否已经是新对话页面
             const checkUrlScript = 'return window.location.href';
             const urlResult = await this.llmController.executeLLMScript(this.session, checkUrlScript);
+            console.log('[DEBUG] urlResult:', JSON.stringify(urlResult, null, 2));
+            console.log('[DEBUG] urlResult.result 类型:', typeof urlResult.result);
+            console.log('[DEBUG] urlResult.result?.value 类型:', typeof urlResult.result?.value);
 
-            if (urlResult.success && urlResult.result.includes('/new')) {
+            const currentUrl = urlResult.result?.value || urlResult.result || '';
+            console.log('[DEBUG] 最终 currentUrl:', currentUrl, '类型:', typeof currentUrl);
+            if (urlResult.success && typeof currentUrl === 'string' && currentUrl.includes('/new')) {
                 console.log('[Claude] 已在新对话页面');
                 return true;
             }
@@ -203,7 +207,8 @@ export class ClaudeLLMPublisher {
 
                 // 验证是否跳转成功
                 const verifyResult = await this.llmController.executeLLMScript(this.session, checkUrlScript);
-                if (verifyResult.success && verifyResult.result.includes('/new')) {
+                const verifyUrl = verifyResult.result?.value || verifyResult.result || '';
+                if (verifyResult.success && typeof verifyUrl === 'string' && verifyUrl.includes('/new')) {
                     console.log('[Claude] ✅ 新对话创建成功');
                     return true;
                 }
@@ -248,7 +253,7 @@ export class ClaudeLLMPublisher {
             const result = await this.llmController.executeLLMScript(this.session, script);
 
             if (result.success && result.result) {
-                const chatId = result.result.value || result.result;
+                const chatId = result.result?.value || result.result;
                 this.conversationId = chatId;
                 console.log(`[Claude] 获取对话ID: ${this.conversationId}`);
                 return this.conversationId;
@@ -696,7 +701,7 @@ export class ClaudeLLMPublisher {
             });
 
             if (result.success && result.result) {
-                const waitResult = result.result.value || result.result;
+                const waitResult = result.result?.value || result.result;
 
                 if (waitResult && waitResult.success) {
                     console.log(`[Claude] ✅ 完整回复等待成功`);
@@ -1007,8 +1012,8 @@ export class ClaudeLLMPublisher {
             });
 
             if (result.success && result.result) {
-                const extractedContent = result.result.value || result.result;
-
+                //const extractedContent = result.result.value || result.result;
+                const extractedContent = result.result?.value || result.result;
                 if (extractedContent.error) {
                     throw new Error(extractedContent.error);
                 }
