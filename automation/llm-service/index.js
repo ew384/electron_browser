@@ -666,7 +666,8 @@ class LLMManager {
             // 动态导入Claude发布器
             const { ClaudeLLMPublisher } = await import('../engines/llm-publishers/claude-llm-publisher.js');
             this.publishers.set('claude', ClaudeLLMPublisher);
-
+            const { DeepSeekLLMPublisher } = await import('../engines/llm-publishers/deepseek-llm-publisher.js');
+            this.publishers.set('deepseek', DeepSeekLLMPublisher);
             // 后续可以添加其他LLM发布器
             // const { ChatGPTLLMPublisher } = await import('../engines/llm-publishers/chatgpt-llm-publisher.js');
             // this.publishers.set('chatgpt', ChatGPTLLMPublisher);
