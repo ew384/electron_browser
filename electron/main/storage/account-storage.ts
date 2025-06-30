@@ -10,7 +10,7 @@ import {
   PlatformType,
   CookieStatus,
   BatchOperation
-} from '../shared/types';
+} from '../../shared/types';
 
 export class AccountStorage {
   private accountsFile: string;
