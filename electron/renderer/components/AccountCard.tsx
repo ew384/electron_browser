@@ -1,182 +1,301 @@
-/**
- * 账号卡片组件 - 单个账号的管理界面
- */
-import React, { useState, useEffect } from 'react';
+// electron/renderer/components/AccountCard.tsx - 扩展的账号卡片组件
+
+import React, { useState } from 'react';
+import { BrowserAccount, PlatformType } from '../../shared/types';
 import { useAccountStore } from '../stores/accountStore';
-import type { BrowserAccount } from '@shared/types';
 
 interface AccountCardProps {
   account: BrowserAccount;
+  isSelected?: boolean;
+  isBatchMode?: boolean;
+  onSelect?: (accountId: string) => void;
+  onEdit?: (account: BrowserAccount) => void;
+  onDelete?: (accountId: string) => void;
+  onLogin?: (accountId: string, platform: PlatformType) => void;
+  onValidateCookie?: (accountId: string, platform: PlatformType) => void;
 }
 
-export function AccountCard({ account }: AccountCardProps) {
-  const { updateAccount, startInstance, stopInstance, deleteAccount, getDebugPort } = useAccountStore();
+const platformConfigs = {
+  douyin: { name: '抖音', icon: '🎵', color: '#000000' },
+  wechat: { name: '微信视频号', icon: '💬', color: '#07C160' },
+  xiaohongshu: { name: '小红书', icon: '📔', color: '#FF2442' },
+  kuaishou: { name: '快手', icon: '⚡', color: '#FF6600' },
+  bilibili: { name: 'B站', icon: '📺', color: '#00A1D6' },
+  tiktok: { name: 'TikTok', icon: '🎬', color: '#000000' },
+  youtube: { name: 'YouTube', icon: '▶️', color: '#FF0000' }
+};
+
+const statusConfigs = {
+  idle: { name: '空闲', color: '#10B981', bgColor: '#ECFDF5' },
+  running: { name: '运行中', color: '#3B82F6', bgColor: '#EFF6FF' },
+  logging_in: { name: '登录中', color: '#F59E0B', bgColor: '#FFFBEB' },
+  login_failed: { name: '登录失败', color: '#EF4444', bgColor: '#FEF2F2' },
+  cookie_expired: { name: 'Cookie过期', color: '#8B5CF6', bgColor: '#F5F3FF' }
+};
+
+const cookieStatusConfigs = {
+  valid: { name: '有效', color: '#10B981', icon: '✅' },
+  invalid: { name: '无效', color: '#EF4444', icon: '❌' },
+  expired: { name: '过期', color: '#F59E0B', icon: '⏰' },
+  unknown: { name: '未知', color: '#6B7280', icon: '❓' }
+};
+
+export const AccountCard: React.FC<AccountCardProps> = ({
+  account,
+  isSelected = false,
+  isBatchMode = false,
+  onSelect,
+  onEdit,
+  onDelete,
+  onLogin,
+  onValidateCookie
+}) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
-  // 监听账号状态变化，实时更新端口信息
-  useEffect(() => {
-    const updatePortInfo = async () => {
-      if (account.status === 'running' && !account.debugPort) {
-        const port = await getDebugPort(account.id);
-        if (port && port !== account.debugPort) {
-          updateAccount(account.id, { debugPort: port });
-        }
-      }
-    };
+  const platform = account.platform ? platformConfigs[account.platform] : null;
+  const status = statusConfigs[account.status] || statusConfigs.idle;
+  const cookieStatus = cookieStatusConfigs[account.cookieStatus || 'unknown'];
 
-    updatePortInfo();
-  }, [account.status, account.id, account.debugPort, getDebugPort, updateAccount]);
-
-  const getStatusColor = (status: BrowserAccount['status']) => {
-    switch (status) {
-      case 'running':
-        return 'bg-green-500';
-      case 'error':
-        return 'bg-red-500';
-      default:
-        return 'bg-gray-500';
+  const handleCardClick = () => {
+    if (isBatchMode && onSelect) {
+      onSelect(account.id);
     }
   };
 
-  const getStatusText = (status: BrowserAccount['status']) => {
-    switch (status) {
-      case 'running':
-        return '运行中';
-      case 'error':
-        return '错误';
-      default:
-        return '空闲';
-    }
-  };
+  const handleLogin = async () => {
+    if (!account.platform || !onLogin) return;
 
-  const handleStart = async () => {
     setIsLoading(true);
     try {
-      await startInstance(account.id);
+      await onLogin(account.id, account.platform);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleStop = async () => {
+  const handleValidateCookie = async () => {
+    if (!account.platform || !onValidateCookie) return;
+
     setIsLoading(true);
     try {
-      await stopInstance(account.id);
+      await onValidateCookie(account.id, account.platform);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (window.confirm(`确定要删除账号 "${account.name}" 吗？`)) {
-      await deleteAccount(account.id);
-    }
-  };
+  const formatLastLogin = (timestamp?: number) => {
+    if (!timestamp) return '从未登录';
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const copyPortToClipboard = async () => {
-    if (account.debugPort) {
-      try {
-        await navigator.clipboard.writeText(account.debugPort.toString());
-        // 可以添加一个临时的成功提示
-        console.log('端口号已复制到剪贴板:', account.debugPort);
-      } catch (error) {
-        console.error('复制端口号失败:', error);
-      }
-    }
+    if (days === 0) return '今天登录';
+    if (days === 1) return '昨天登录';
+    if (days < 7) return `${days}天前登录`;
+    if (days < 30) return `${Math.floor(days / 7)}周前登录`;
+    return `${Math.floor(days / 30)}个月前登录`;
   };
 
   return (
-    <div className="bg-gray-700 rounded-lg p-4 hover:bg-gray-650 transition-colors">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="relative">
-            <div className="w-12 h-12 bg-gray-600 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </div>
-            <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getStatusColor(account.status)} rounded-full border-2 border-gray-700`} />
+    <div
+      className={`
+        relative bg-white rounded-lg border transition-all duration-200 hover:shadow-md
+        ${isSelected ? 'border-blue-500 shadow-lg ring-2 ring-blue-200' : 'border-gray-200'}
+        ${isBatchMode ? 'cursor-pointer' : ''}
+      `}
+      onClick={handleCardClick}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
+    >
+      {/* 选择指示器 */}
+      {isBatchMode && (
+        <div className="absolute top-3 left-3 z-10">
+          <div className={`
+            w-5 h-5 rounded-full border-2 flex items-center justify-center
+            ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white border-gray-300'}
+          `}>
+            {isSelected && <span className="text-white text-xs">✓</span>}
           </div>
+        </div>
+      )}
 
-          <div className="flex-1">
-            <h3 className="font-medium text-white">{account.name}</h3>
-            <div className="flex items-center space-x-4 text-sm text-gray-400">
-              <span>状态: {getStatusText(account.status)}</span>
-              {/* 新增：端口信息显示 */}
-              {account.status === 'running' && account.debugPort ? (
-                <span
-                  className="cursor-pointer hover:text-blue-400 transition-colors flex items-center space-x-1"
-                  onClick={copyPortToClipboard}
-                  title="点击复制端口号"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                  </svg>
-                  <span>端口: {account.debugPort}</span>
-                </span>
-              ) : account.status === 'running' ? (
-                <span className="text-yellow-400">端口: 获取中...</span>
+      {/* 卡片主体 */}
+      <div className="p-4">
+        {/* 头部信息 */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center space-x-3">
+            {/* 头像/平台图标 */}
+            <div className="relative">
+              {account.avatar ? (
+                <img
+                  src={account.avatar}
+                  alt={account.name}
+                  className="w-12 h-12 rounded-full object-cover"
+                />
               ) : (
-                <span>端口: -</span>
+                <div
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg"
+                  style={{ backgroundColor: platform?.color || '#6B7280' }}
+                >
+                  {platform?.icon || account.name.charAt(0).toUpperCase()}
+                </div>
               )}
-              <span>创建: {formatDate(account.createdAt)}</span>
+
+              {/* 状态指示点 */}
+              <div
+                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white"
+                style={{ backgroundColor: status.color }}
+                title={status.name}
+              />
             </div>
+
+            {/* 账号信息 */}
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-gray-900 truncate">
+                {account.name}
+              </h3>
+              {account.username && (
+                <p className="text-sm text-gray-500 truncate">
+                  @{account.username}
+                </p>
+              )}
+              <div className="flex items-center space-x-2 mt-1">
+                {platform && (
+                  <span
+                    className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white"
+                    style={{ backgroundColor: platform.color }}
+                  >
+                    {platform.icon} {platform.name}
+                  </span>
+                )}
+                {account.group && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    📁 {account.group}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 状态信息 */}
+          <div className="flex flex-col items-end space-y-1">
+            <span
+              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+              style={{
+                color: status.color,
+                backgroundColor: status.bgColor
+              }}
+            >
+              {status.name}
+            </span>
+            <span
+              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+              style={{ color: cookieStatus.color }}
+              title={`Cookie状态: ${cookieStatus.name}`}
+            >
+              {cookieStatus.icon} {cookieStatus.name}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
-          {/* 新增：端口显示按钮（在运行状态下） */}
-          {account.status === 'running' && account.debugPort && (
-            <div className="px-3 py-1 bg-blue-600/20 text-blue-400 rounded-md text-xs font-mono border border-blue-600/30">
-              :{account.debugPort}
+        {/* 详细信息 */}
+        <div className="space-y-2 text-sm text-gray-600">
+          <div className="flex justify-between">
+            <span>最后登录:</span>
+            <span>{formatLastLogin(account.lastLoginTime)}</span>
+          </div>
+
+          {account.debugPort && (
+            <div className="flex justify-between">
+              <span>调试端口:</span>
+              <span className="font-mono">{account.debugPort}</span>
             </div>
           )}
 
-          {account.status === 'running' ? (
-            <button
-              onClick={handleStop}
-              disabled={isLoading}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-800 
-                          rounded-md text-sm font-medium transition-colors"
-            >
-              {isLoading ? '停止中...' : '停止'}
-            </button>
-          ) : (
-            <button
-              onClick={handleStart}
-              disabled={isLoading}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-800 
-                          rounded-md text-sm font-medium transition-colors"
-            >
-              {isLoading ? '启动中...' : '启动'}
-            </button>
-          )}
-
-          <button
-            onClick={handleDelete}
-            className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/20 
-                        rounded-md transition-colors"
-            title="删除账号"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
+          <div className="flex justify-between">
+            <span>创建时间:</span>
+            <span>{account.createdAt ? new Date(account.createdAt).toLocaleDateString() : '-'}</span>
+          </div>
         </div>
+
+        {/* 标签 */}
+        {account.tags && account.tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1">
+            {account.tags.map((tag, index) => (
+              <span
+                key={index}
+                className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-50 text-blue-700"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* 备注 */}
+        {account.notes && (
+          <div className="mt-3 p-2 bg-gray-50 rounded text-sm text-gray-600">
+            {account.notes}
+          </div>
+        )}
       </div>
+
+      {/* 操作按钮 */}
+      {!isBatchMode && (showActions || isLoading) && (
+        <div className="absolute inset-0 bg-white bg-opacity-95 rounded-lg flex items-center justify-center">
+          <div className="flex space-x-2">
+            {/* 登录按钮 */}
+            {account.platform && (
+              <button
+                onClick={handleLogin}
+                disabled={isLoading || account.status === 'running' || account.status === 'logging_in'}
+                className="px-3 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+              >
+                {isLoading ? '处理中...' : '登录'}
+              </button>
+            )}
+
+            {/* 验证Cookie按钮 */}
+            {account.platform && (
+              <button
+                onClick={handleValidateCookie}
+                disabled={isLoading}
+                className="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+              >
+                验证Cookie
+              </button>
+            )}
+
+            {/* 编辑按钮 */}
+            <button
+              onClick={() => onEdit?.(account)}
+              disabled={isLoading}
+              className="px-3 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+            >
+              编辑
+            </button>
+
+            {/* 删除按钮 */}
+            <button
+              onClick={() => onDelete?.(account.id)}
+              disabled={isLoading || account.status === 'running'}
+              className="px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+            >
+              删除
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 加载指示器 */}
+      {isLoading && (
+        <div className="absolute top-2 right-2">
+          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      )}
     </div>
   );
-}
+};
