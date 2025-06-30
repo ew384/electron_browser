@@ -38,7 +38,7 @@
 │   │   └── README.md
 │   ├── logs
 │   ├── media-service
-│   │   └── automation_service.py
+│   │   └── media-auto-serivice.py
 │   ├── output
 │   ├── package.json
 │   ├── package-lock.json
