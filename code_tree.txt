@@ -19,13 +19,13 @@
 │   │   ├── llm-controller.js
 │   │   ├── template-engine.js
 │   │   └── workflow-engine.js
-│   ├── debug-page-elements.js
 │   ├── engines
 │   │   ├── douyin-video-publisher.js
 │   │   ├── downloaders
 │   │   │   └── douyin-downloader.js
 │   │   ├── llm-publishers
-│   │   │   └── claude-llm-publisher.js
+│   │   │   ├── claude-llm-publisher.js
+│   │   │   └── deepseek-llm-publisher.js
 │   │   ├── multi-platform-engine.js
 │   │   ├── wechat-video-publisher.js
 │   │   └── xiaohongshu-video-publisher.js
@@ -34,7 +34,8 @@
 │   ├── llm-service
 │   │   ├── index.js
 │   │   ├── package.json
-│   │   └── package-lock.json
+│   │   ├── package-lock.json
+│   │   └── README.md
 │   ├── logs
 │   ├── output
 │   ├── package.json
@@ -42,24 +43,27 @@
 │   ├── README.md
 │   ├── test
 │   │   ├── claude_api_test.sh
+│   │   ├── debug-page-elements.js
+│   │   ├── deepseek_api_test.sh
 │   │   ├── douyin_download_api.sh
-│   │   └── tts_api_test.sh
-│   ├── test-account.json
-│   ├── test-content.json
-│   ├── test-douyin.json
-│   ├── test-template.json
-│   ├── test_wechat.sh
+│   │   ├── res.json
+│   │   ├── test-account.json
+│   │   ├── test-content.json
+│   │   ├── test-douyin.json
+│   │   ├── test-template.json
+│   │   ├── test_wechat.sh
+│   │   ├── tts_api_test.sh
+│   │   ├── video-account.json
+│   │   ├── video-accounts.json
+│   │   ├── video-content.json
+│   │   └── video-template.json
 │   ├── types
 │   │   ├── claude-publisher.d.ts
 │   │   ├── llm-controller.d.ts
 │   │   └── llm-platforms.d.ts
-│   ├── utils
-│   │   ├── element-analyzer.js
-│   │   └── test-video-generator.js
-│   ├── video-account.json
-│   ├── video-accounts.json
-│   ├── video-content.json
-│   └── video-template.json
+│   └── utils
+│       ├── element-analyzer.js
+│       └── test-video-generator.js
 ├── code_tree.txt
 ├── data
 ├── electron
@@ -112,10 +116,7 @@
 │   │   └── automation.d.ts
 │   └── yarn.lock
 ├── LICENSE
-├── llm_fastAPI
-│   └── LLM_chromeTab_manager.py
 ├── package.json
-├── package-lock.json
 ├── README.md
 ├── run_llm_service.sh
 ├── server
@@ -379,4 +380,4 @@
 │   └── vue.config.js
 └── yarn.lock
 
-118 directories, 261 files
+117 directories, 263 files
