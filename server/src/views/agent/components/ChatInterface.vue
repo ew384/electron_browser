@@ -21,10 +21,15 @@
     <!-- 聊天消息区域 -->
     <div ref="messagesContainer" class="chat-messages">
       <!-- 欢迎消息 -->
-      <div v-if="messages.length === 0" class="welcome-section">
+      <div v-if="!hasUserInteracted" class="welcome-section">
         <h2 class="welcome-title">{{ currentAgent.name }}</h2>
         <p class="welcome-subtitle">{{ currentAgent.description }}</p>
-
+        <!-- 🆕 添加这部分 -->
+        <div v-if="systemWelcomeMessage" class="system-welcome-message">
+          <div class="welcome-message-bubble">
+            {{ systemWelcomeMessage }}
+          </div>
+        </div>
         <!-- 快捷操作建议 -->
         <div class="quick-actions">
           <div class="action-grid">
@@ -42,32 +47,33 @@
       </div>
 
       <!-- 对话消息列表 -->
-      <div v-for="message in messages" :key="message.id" class="message-item">
-        <div :class="['message', message.type]">
-          <div v-if="message.type === 'assistant'" class="message-avatar">
-            <div class="avatar-circle">
-              {{ currentAgent.name.charAt(0).toUpperCase() }}
-            </div>
-          </div>
-
-          <div class="message-content">
-            <div class="message-bubble">
-              <div
-                v-if="message.attachments && message.attachments.length > 0"
-                class="message-attachments"
-              >
-                <div v-for="file in message.attachments" :key="file.id" class="attachment-item">
-                  <i class="el-icon-document"></i>
-                  <span>{{ file.name }}</span>
-                </div>
+      <template v-if="hasUserInteracted">
+        <div v-for="message in messages" :key="message.id" class="message-item">
+          <div :class="['message', message.type]">
+            <div v-if="message.type === 'assistant'" class="message-avatar">
+              <div class="avatar-circle">
+                {{ currentAgent.name.charAt(0).toUpperCase() }}
               </div>
-              <div class="message-text">{{ message.content }}</div>
             </div>
-            <div class="message-time">{{ formatTime(message.timestamp) }}</div>
+
+            <div class="message-content">
+              <div class="message-bubble">
+                <div
+                  v-if="message.attachments && message.attachments.length > 0"
+                  class="message-attachments"
+                >
+                  <div v-for="file in message.attachments" :key="file.id" class="attachment-item">
+                    <i class="el-icon-document"></i>
+                    <span>{{ file.name }}</span>
+                  </div>
+                </div>
+                <div class="message-text">{{ message.content }}</div>
+              </div>
+              <div class="message-time">{{ formatTime(message.timestamp) }}</div>
+            </div>
           </div>
         </div>
-      </div>
-
+      </template>
       <!-- 加载状态 -->
       <div v-if="isLoading" class="message-item">
         <div class="message assistant">
@@ -126,6 +132,7 @@
           <div class="input-actions">
             <!-- 文件上传按钮 -->
             <el-upload
+              action="#"
               :show-file-list="false"
               :before-upload="handleFileUpload"
               :auto-upload="false"
@@ -171,6 +178,8 @@ export default {
       messages: [],
       attachedFiles: [],
       isLoading: false,
+      hasUserInteracted: false, // 🆕 添加这一行
+      systemWelcomeMessage: '', // 🆕 添加这一行
       currentAgent: {
         id: 1,
         name: 'Browser Agent',
@@ -201,7 +210,10 @@ export default {
           message: '帮我想一些创意点子',
           icon: 'el-icon-magic-stick'
         }
-      ]
+      ],
+      isConnected: false, // 添加连接状态
+      ws: null, // WebSocket实例
+      sessionId: null // 会话ID
     }
   },
   computed: {
@@ -233,35 +245,52 @@ export default {
       const wsUrl = process.env.VUE_APP_AGENT_WS_URL || 'ws://localhost:3214'
       console.log('连接到Agent服务:', wsUrl)
 
-      this.ws = new WebSocket(wsUrl)
+      try {
+        this.ws = new WebSocket(wsUrl)
 
-      this.ws.onopen = () => {
-        console.log('Agent WebSocket连接成功')
-        this.isConnected = true
-        this.$message.success('已连接到AI助手')
-      }
+        this.ws.onopen = () => {
+          console.log('Agent WebSocket连接成功')
+          this.isConnected = true
+          this.$message.success('已连接到AI助手')
+        }
 
-      this.ws.onmessage = event => {
-        const data = JSON.parse(event.data)
-        console.log('收到Agent消息:', data)
-        this.handleAgentMessage(data)
-      }
-
-      this.ws.onclose = () => {
-        console.log('Agent WebSocket连接关闭')
-        this.isConnected = false
-
-        // 5秒后重连
-        setTimeout(() => {
-          if (!this.isConnected) {
-            this.connectToAgent()
+        this.ws.onmessage = event => {
+          try {
+            const data = JSON.parse(event.data)
+            console.log('收到Agent消息:', data)
+            this.handleAgentMessage(data)
+          } catch (e) {
+            console.error('解析Agent消息失败:', e, event.data)
           }
-        }, 5000)
-      }
+        }
 
-      this.ws.onerror = error => {
-        console.error('Agent WebSocket错误:', error)
+        this.ws.onclose = event => {
+          console.log('Agent WebSocket连接关闭', event.code, event.reason)
+          this.isConnected = false
+
+          // 只有在非正常关闭时才显示警告
+          if (event.code !== 1000) {
+            this.$message.warning('与AI助手连接断开')
+          }
+
+          // 5秒后重连
+          setTimeout(() => {
+            if (!this.isConnected) {
+              console.log('尝试重新连接...')
+              this.connectToAgent()
+            }
+          }, 5000)
+        }
+
+        this.ws.onerror = error => {
+          console.error('Agent WebSocket错误:', error)
+          this.isConnected = false
+          this.$message.error('连接AI助手失败')
+        }
+      } catch (error) {
+        console.error('创建WebSocket连接失败:', error)
         this.isConnected = false
+        this.$message.error('无法创建WebSocket连接')
       }
     },
 
@@ -277,29 +306,34 @@ export default {
       switch (data.type) {
         case 'welcome':
           this.sessionId = data.sessionId
-          this.addAssistantMessage(data.message)
+          this.systemWelcomeMessage = data.message // 🆕 存储欢迎消息
           break
 
         case 'workflow_started':
+          this.hasUserInteracted = true // 🆕 标记用户已交互
           this.addAssistantMessage(`🚀 ${data.message}`)
           break
 
         case 'need_more_info':
         case 'need_clarification':
+          this.hasUserInteracted = true // 🆕 标记用户已交互
           this.addAssistantMessage(data.message)
           break
 
         case 'step_executing':
+          this.hasUserInteracted = true // 🆕 标记用户已交互
           this.isLoading = true
           this.addAssistantMessage(`⚙️ ${data.message}`)
           break
 
         case 'step_completed':
+          this.hasUserInteracted = true // 🆕 标记用户已交互
           this.isLoading = false
           this.addAssistantMessage(`✅ ${data.message}`)
           break
 
         case 'workflow_completed':
+          this.hasUserInteracted = true // 🆕 标记用户已交互
           this.isLoading = false
           this.addAssistantMessage(`🎉 ${data.message}`)
           if (data.summary) {
@@ -309,11 +343,13 @@ export default {
 
         case 'step_failed':
         case 'error':
+          this.hasUserInteracted = true // 🆕 标记用户已交互
           this.isLoading = false
           this.addAssistantMessage(`❌ ${data.message}`)
           break
 
         default:
+          this.hasUserInteracted = true // 🆕 标记用户已交互
           this.addAssistantMessage(JSON.stringify(data, null, 2))
       }
     },
@@ -336,7 +372,7 @@ export default {
     // 🆕 修改发送消息方法
     async sendMessage() {
       if (!this.canSend) return
-
+      this.hasUserInteracted = true
       const messageContent = this.inputMessage.trim()
       const attachments = [...this.attachedFiles]
 
@@ -374,6 +410,7 @@ export default {
 
     // 其他方法保持不变...
     sendQuickMessage(message) {
+      this.hasUserInteracted = true
       this.inputMessage = message
       this.sendMessage()
     },
@@ -417,6 +454,7 @@ export default {
       })
         .then(() => {
           this.messages = []
+          this.hasUserInteracted = false
           this.$message.success('对话已清空')
         })
         .catch(() => {})
@@ -541,7 +579,25 @@ export default {
   text-align: center;
   padding: 60px 40px;
   min-height: 400px;
+  .system-welcome-message {
+    margin: 20px 0 30px 0;
+    display: flex;
+    justify-content: center;
 
+    .welcome-message-bubble {
+      background: #f8f9fa;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px 20px;
+      max-width: 600px;
+      color: #374151;
+      font-size: 14px;
+      line-height: 1.6;
+      text-align: left;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      white-space: pre-line;
+    }
+  }
   .welcome-avatar {
     margin-bottom: 24px;
 
@@ -616,39 +672,56 @@ export default {
 }
 
 .message-item {
+  display: flex;
+  align-items: flex-start;
   padding: 12px 24px;
+  margin-bottom: 16px; // 增加消息间距
 
   .message {
     display: flex;
     align-items: flex-start;
-    max-width: 100%;
+    max-width: 85%; // 限制最大宽度为85%，而不是100%
+    width: fit-content; // 🆕 关键：让宽度自适应内容
 
     &.user {
       flex-direction: row-reverse;
+      margin-left: auto; // 🆕 用户消息右对齐
 
       .message-content {
         margin-right: 12px;
         margin-left: 0;
 
         .message-bubble {
-          background: #5e31d8;
+          background: linear-gradient(135deg, #5e31d8, #6d42e0); // 🆕 渐变背景
           color: white;
-          border-radius: 18px 18px 4px 18px;
+          border-radius: 20px 20px 6px 20px; // 🆕 更现代的圆角
+          box-shadow: 0 2px 12px rgba(94, 49, 216, 0.3); // 🆕 阴影效果
+          max-width: none; // 移除最大宽度限制
+          word-wrap: break-word;
+          word-break: break-word; // 🆕 处理长单词换行
         }
       }
     }
 
     &.assistant {
+      margin-right: auto; // 🆕 助手消息左对齐
+
       .message-content {
         margin-left: 12px;
 
         .message-bubble {
-          background: #f3f4f6;
+          background: #ffffff; // 🆕 纯白背景
           color: #1f2937;
-          border-radius: 18px 18px 18px 4px;
+          border-radius: 20px 20px 20px 6px; // 🆕 更现代的圆角
+          border: 1px solid #e5e7eb; // 🆕 淡边框
+          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08); // 🆕 轻微阴影
+          max-width: none; // 移除最大宽度限制
+          word-wrap: break-word;
+          word-break: break-word; // 🆕 处理长单词换行
 
           &.loading {
             padding: 12px 16px;
+            background: #f8f9fa; // 🆕 加载状态稍微不同的背景
           }
         }
       }
@@ -662,14 +735,15 @@ export default {
       .avatar-circle {
         width: 100%;
         height: 100%;
-        background: #5e31d8;
+        background: linear-gradient(135deg, #5e31d8, #6d42e0); // 🆕 渐变头像
         color: white;
-        border-radius: 8px;
+        border-radius: 10px; // 🆕 更圆润的头像
         display: flex;
         align-items: center;
         justify-content: center;
         font-weight: 600;
         font-size: 12px;
+        box-shadow: 0 2px 8px rgba(94, 49, 216, 0.25); // 🆕 头像阴影
       }
     }
 
@@ -678,10 +752,11 @@ export default {
       min-width: 0;
 
       .message-bubble {
-        padding: 12px 16px;
-        word-wrap: break-word;
-        line-height: 1.5;
+        padding: 14px 18px; // 🆕 稍微增加内边距
+        line-height: 1.6; // 🆕 增加行高提升可读性
         font-size: 14px;
+        min-width: 40px; // 🆕 设置最小宽度
+        max-width: 600px; // 🆕 设置最大宽度防止过长
 
         .message-attachments {
           margin-bottom: 8px;
@@ -689,15 +764,15 @@ export default {
           .attachment-item {
             display: inline-flex;
             align-items: center;
-            background: rgba(255, 255, 255, 0.2);
-            padding: 4px 8px;
-            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.15); // 🆕 调整透明度
+            padding: 6px 10px; // 🆕 调整内边距
+            border-radius: 8px; // 🆕 更圆润
             margin-right: 8px;
             margin-bottom: 4px;
             font-size: 12px;
 
             i {
-              margin-right: 4px;
+              margin-right: 6px;
             }
           }
         }
@@ -710,13 +785,14 @@ export default {
       .message-time {
         font-size: 11px;
         color: #9ca3af;
-        margin-top: 4px;
+        margin-top: 6px; // 🆕 稍微增加间距
         text-align: right;
       }
     }
   }
 
-  .user .message-content .message-time {
+  // 🆕 用户消息的时间显示在左侧
+  &:has(.user) .message-content .message-time {
     text-align: left;
   }
 }
