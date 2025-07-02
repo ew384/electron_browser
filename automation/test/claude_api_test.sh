@@ -45,7 +45,7 @@ __comment() {
 
 set -e  # 遇到错误时退出
 
-BASE_URL="http://localhost:3212"
+BASE_URL="http://127.0.0.1:3212"
 API_KEY="test1"
 PROVIDER="claude"
 

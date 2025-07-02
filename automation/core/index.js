@@ -10,7 +10,7 @@ import fs from 'fs'
 export class UniversalPublisher {
     constructor(options = {}) {
         this.config = {
-            electronApiUrl: options.electronApiUrl || 'http://localhost:9528',
+            electronApiUrl: options.electronApiUrl || 'http://127.0.0.1:9528',
             timeout: options.timeout || 15000,
             retryAttempts: options.retryAttempts || 3,
             outputDir: options.outputDir || './output',

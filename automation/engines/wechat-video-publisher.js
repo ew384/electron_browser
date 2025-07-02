@@ -142,13 +142,49 @@ export class WeChatVideoPublisher {
                     throw new Error('未找到上传区域 (.center)');
                 }
                 
-                // 查找文件输入框
-                let fileInput = shadowDoc.querySelector('input[type="file"]');
-                if (!fileInput) {
+                let fileInput = null;
+
+                // 1. 首先尝试直接查找
+                fileInput = shadowDoc.querySelector('input[type="file"]');
+
+                // 2. 如果没找到，尝试在上传区域内查找
+                if (!fileInput && uploadArea) {
                     fileInput = uploadArea.querySelector('input[type="file"]');
                 }
+
+                // 3. 尝试备选选择器（从平台配置中获取）
                 if (!fileInput) {
-                    throw new Error('未找到文件上传输入框');
+                    const altSelectors = ['input[accept*="video"]', 'input[accept*="*"]', '.upload-input input[type="file"]'];
+                    for (const selector of altSelectors) {
+                        fileInput = shadowDoc.querySelector(selector);
+                        if (fileInput) break;
+                    }
+                }
+
+                // 4. 如果还没找到，检查是否需要触发上传区域来创建输入框
+                if (!fileInput) {
+                    console.log('未找到文件输入框，尝试点击上传区域创建输入框...');
+                    uploadArea.click();
+                    
+                    // 等待输入框创建
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    fileInput = shadowDoc.querySelector('input[type="file"]');
+                }
+                if (!fileInput) {
+                    const debugInfo = {
+                        uploadAreaFound: !!uploadArea,
+                        uploadAreaClass: uploadArea?.className,
+                        shadowDocContent: shadowDoc.querySelector('.center')?.outerHTML?.substring(0, 500),
+                        allInputs: Array.from(shadowDoc.querySelectorAll('input')).map(input => ({
+                            type: input.type,
+                            accept: input.accept,
+                            className: input.className
+                        }))
+                    };
+                    
+                    console.log('调试信息:', JSON.stringify(debugInfo, null, 2));
+                    throw new Error('未找到文件上传输入框。调试信息:${JSON.stringify(debugInfo)}');
                 }
                 
                 // 创建File对象

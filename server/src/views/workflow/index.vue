@@ -5,7 +5,7 @@
       <div ref="iframeContainer" class="iframe-container">
         <iframe
           ref="workflowFrame"
-          src="http://localhost:5173"
+          src="http://127.0.0.1:3210"
           frameborder="0"
           :scrolling="allowScrolling ? 'yes' : 'auto'"
           @load="onIframeLoad"
@@ -249,8 +249,8 @@ export default {
     setupMessageListener() {
       // 监听来自iframe的消息
       window.addEventListener('message', event => {
-        if (event.origin !== 'http://localhost:5173') return
-
+        // if (event.origin !== 'http://localhost:5173') return
+        if (event.origin !== 'http://127.0.0.1:3210') return
         // 处理高度调整消息
         if (event.data.type === 'resize') {
           const { height } = event.data

@@ -771,7 +771,82 @@ export class DeepSeekLLMPublisher {
                                 console.log('使用策略3:', result.method);
                             }
                         }
-                        
+                        // 🔧 备用策略4：基于实际DOM结构的代码块提取（如果前面策略都失败）
+                        if (!result || extractedText.length < 100) {
+                            console.log('尝试备用策略4: DOM结构代码块提取');
+                            
+                            // 查找代码块容器
+                            const codeSelectors = [
+                                '.md-code-block',
+                                '.md-code-block-dark', 
+                                'pre',
+                                '[class*="code"]'
+                            ];
+                            
+                            let bestCodeBlock = null;
+                            let maxLength = 0;
+                            
+                            for (const selector of codeSelectors) {
+                                const elements = document.querySelectorAll(selector);
+                                for (const el of elements) {
+                                    const text = el.textContent?.trim();
+                                    if (text && text.length > maxLength) {
+                                        maxLength = text.length;
+                                        bestCodeBlock = text;
+                                    }
+                                }
+                            }
+                            
+                            if (bestCodeBlock && bestCodeBlock.length > 50) {
+                                extractedText = bestCodeBlock;
+                                extractionMethod = 'dom_code_block_extraction';
+                                console.log('备用策略4成功:', extractionMethod, '长度:', extractedText.length);
+                            }
+                        }
+                        // 🔧 备用策略5：查找markdown段落内容（处理<br>标签格式）
+                        if (!result || extractedText.length < 100) {
+                            console.log('尝试备用策略5: Markdown段落提取');
+                            
+                            // 查找markdown段落元素
+                            const markdownSelectors = [
+                                '.ds-markdown-paragraph',
+                                '[class*="markdown"]',
+                                'p[class*="ds-"]'
+                            ];
+                            
+                            let bestMarkdownContent = null;
+                            let maxLength = 0;
+                            
+                            for (const selector of markdownSelectors) {
+                                const elements = document.querySelectorAll(selector);
+                                for (const el of elements) {
+                                    const html = el.innerHTML;
+                                    const text = el.textContent?.trim();
+                                    
+                                    // 检查是否包含JSON特征或有意义的内容
+                                    if (text && text.length > 50 && 
+                                        (text.includes('"') || text.includes('{') || text.includes('需求类型'))) {
+                                        
+                                        // 处理<br>标签，转换为真正的换行符
+                                        const processedText = html
+                                            .replace(/<br\\s*\\/?>/gi, '\\n')  // 将<br>替换为换行符
+                                            .replace(/<[^>]*>/g, '')          // 移除其他HTML标签
+                                            .trim();
+                                        
+                                        if (processedText.length > maxLength) {
+                                            maxLength = processedText.length;
+                                            bestMarkdownContent = processedText;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (bestMarkdownContent && bestMarkdownContent.length > 50) {
+                                extractedText = bestMarkdownContent;
+                                extractionMethod = 'markdown_paragraph_extraction';
+                                console.log('备用策略5成功:', extractionMethod, '长度:', extractedText.length);
+                            }
+                        }                        
                         if (!extractedText || extractedText.length < 50) {
                             console.error('所有提取策略都失败');
                             return {
@@ -783,48 +858,61 @@ export class DeepSeekLLMPublisher {
                         
                         // 🔧 智能内容清理
                         let cleanedContent = extractedText;
-                        
-                        // 移除问题文本本身（如果在开头）
-                        if (cleanedContent.startsWith(questionText)) {
-                            cleanedContent = cleanedContent.substring(questionText.length).trim();
+                        // 检查是否是JSON格式内容，如果是则进行轻度清理
+                        const isJsonContent = extractedText.includes('"需求类型"') || 
+                                            extractedText.includes('"下一步操作"') ||
+                                            (extractedText.trim().startsWith('{') && extractedContent.trim().endsWith('}'));
+
+                        if (isJsonContent) {
+                            console.log('检测到JSON格式内容，使用轻度清理');
+                            // 只做基本清理
+                            cleanedContent = extractedText
+                                .replace(/Copy\\s*Download/gi, '')
+                                .replace(/Copy/g, '')
+                                .replace(/Download/g, '')
+                                .trim();
+                        } else {
+                            // 移除问题文本本身（如果在开头）
+                            if (cleanedContent.startsWith(questionText)) {
+                                cleanedContent = cleanedContent.substring(questionText.length).trim();
+                            }
+                            
+                            // 深度清理模式
+                            const deepCleanPatterns = [
+                                // UI按钮和操作
+                                /[a-z]+CopyDownload/gi,
+                                /Copy\\s*Download/gi,
+                                /\\s+Copy\\s+/g,
+                                /\\s+Download\\s+/g,
+                                
+                                // DeepSeek特有元素
+                                /New chat DeepThink \\(R1\\)Search/g,
+                                /DeepThink \\(R1\\)/g,
+                                /AI-generated[^\\n]*/gi,
+                                
+                                // CSS和样式（完整清理）
+                                /@[a-z-]+\\s*\\{[^}]*\\}/gi,
+                                /\\.[a-z-]+[^{]*\\{[^}]*\\}/gi,
+                                /[a-z-]+:\\s*[^;]*;/gi,
+                                /rgba?\\([^)]*\\)/gi,
+                                /[0-9]+px/gi,
+                                
+                                // 其他UI垃圾
+                                /intercom[^\\s]*/gi,
+                                /Search(?!\\w)/g,
+                                /\\s{3,}/g
+                            ];
+                            
+                            deepCleanPatterns.forEach(pattern => {
+                                cleanedContent = cleanedContent.replace(pattern, ' ');
+                            });
+                            
+                            // 最终格式化
+                            cleanedContent = cleanedContent
+                                .replace(/\\s+/g, ' ')
+                                .replace(/\\n{3,}/g, '\\n\\n')
+                                .trim();
                         }
-                        
-                        // 深度清理模式
-                        const deepCleanPatterns = [
-                            // UI按钮和操作
-                            /[a-z]+CopyDownload/gi,
-                            /Copy\\s*Download/gi,
-                            /\\s+Copy\\s+/g,
-                            /\\s+Download\\s+/g,
-                            
-                            // DeepSeek特有元素
-                            /New chat DeepThink \\(R1\\)Search/g,
-                            /DeepThink \\(R1\\)/g,
-                            /AI-generated[^\\n]*/gi,
-                            
-                            // CSS和样式（完整清理）
-                            /@[a-z-]+\\s*\\{[^}]*\\}/gi,
-                            /\\.[a-z-]+[^{]*\\{[^}]*\\}/gi,
-                            /[a-z-]+:\\s*[^;]*;/gi,
-                            /rgba?\\([^)]*\\)/gi,
-                            /[0-9]+px/gi,
-                            
-                            // 其他UI垃圾
-                            /intercom[^\\s]*/gi,
-                            /Search(?!\\w)/g,
-                            /\\s{3,}/g
-                        ];
-                        
-                        deepCleanPatterns.forEach(pattern => {
-                            cleanedContent = cleanedContent.replace(pattern, ' ');
-                        });
-                        
-                        // 最终格式化
-                        cleanedContent = cleanedContent
-                            .replace(/\\s+/g, ' ')
-                            .replace(/\\n{3,}/g, '\\n\\n')
-                            .trim();
-                        
                         // 简单的内容有效性检查
                         if (cleanedContent.length < 20) {
                             console.error('清理后内容过短');

@@ -174,7 +174,7 @@ export class DouyinDownloader {
         `;
 
         const response = await this.chromeController.httpRequest(
-            `http://localhost:9528/api/browser/${accountId}/tabs/${tabId}/execute-script`,
+            `http://127.0.0.1:9528/api/browser/${accountId}/tabs/${tabId}/execute-script`,
             {
                 method: 'POST',
                 body: JSON.stringify({
@@ -388,7 +388,7 @@ export class DouyinDownloader {
 
         try {
             const response = await this.chromeController.httpRequest(
-                `http://localhost:9528/api/browser/${accountId}/tabs`,
+                `http://127.0.0.1:9528/api/browser/${accountId}/tabs`,
                 {
                     method: 'POST',
                     body: JSON.stringify({
@@ -424,7 +424,7 @@ export class DouyinDownloader {
     async _closeDownloadTab(accountId, tabId) {
         try {
             await this.chromeController.httpRequest(
-                `http://localhost:9528/api/browser/${accountId}/tabs/${tabId}`,
+                `http://127.0.0.1:9528/api/browser/${accountId}/tabs/${tabId}`,
                 { method: 'DELETE' }
             );
             console.log(`✅ 下载标签页已关闭: ${tabId}`);

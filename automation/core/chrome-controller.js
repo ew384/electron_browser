@@ -4,7 +4,7 @@ import { ElectronBrowserAPI } from './electron-browser-api.js'
 export class ChromeController {
     constructor(config = {}) {
         this.config = {
-            electronApiUrl: config.electronApiUrl || 'http://localhost:9528',
+            electronApiUrl: config.electronApiUrl || 'http://127.0.0.1:9528',
             timeout: config.timeout || 15000,
             retryAttempts: config.retryAttempts || 3,
             ...config

@@ -200,7 +200,7 @@
 <script>
 import { getGroupList } from '@/api/native'
 
-const HTTP_API_BASE = 'http://localhost:9528/api'
+const HTTP_API_BASE = 'http://127.0.0.1:9528/api'
 
 export default {
   name: 'BrowserList',

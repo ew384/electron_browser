@@ -25,7 +25,7 @@ program
     .requiredOption('-a, --account <file>', '账号配置文件路径')
     .option('-p, --template <file>', '模板配置文件路径')
     .option('--platform <platform>', '目标平台 (wechat|douyin|xiaohongshu|kuaishou)', 'wechat')
-    .option('--electron-api <url>', 'Electron API地址', 'http://localhost:9528')
+    .option('--electron-api <url>', 'Electron API地址', 'http://127.0.0.1:9528')
     .option('--debug-port <port>', '强制指定调试端口（可选，留空则动态获取）')
     .option('--timeout <ms>', '操作超时时间', '15000')
     .action(async (options) => {
@@ -132,7 +132,7 @@ program
     .requiredOption('-p, --platforms <platforms>', '平台列表，逗号分隔 (wechat,douyin,xiaohongshu,kuaishou)')
     .requiredOption('-a, --accounts <file>', '账号配置文件路径 (JSON数组)')
     .option('-t, --template <file>', '模板配置文件路径')
-    .option('--electron-api <url>', 'Electron API地址', 'http://localhost:9528')
+    .option('--electron-api <url>', 'Electron API地址', 'http://127.0.0.1:9528')
     .option('--timeout <ms>', '操作超时时间', '15000')
     .action(async (options) => {
         try {
@@ -208,7 +208,7 @@ program
     .command('test')
     .description('运行自动化测试（动态端口）')
     .option('--platform <platform>', '测试平台', 'wechat')
-    .option('--electron-api <url>', 'Electron API地址', 'http://localhost:9528')
+    .option('--electron-api <url>', 'Electron API地址', 'http://127.0.0.1:9528')
     .action(async (options) => {
         console.log('🧪 运行自动化测试（动态端口版本）')
 
@@ -355,7 +355,7 @@ program
 program
     .command('status')
     .description('检查系统状态（动态端口版本）')
-    .option('--electron-api <url>', 'Electron API地址', 'http://localhost:9528')
+    .option('--electron-api <url>', 'Electron API地址', 'http://127.0.0.1:9528')
     .action(async (options) => {
         console.log('🔍 检查系统状态（动态端口版本）...\n')
 
@@ -454,7 +454,7 @@ program
 program
     .command('diagnose')
     .description('诊断端口连接问题')
-    .option('--electron-api <url>', 'Electron API地址', 'http://localhost:9528')
+    .option('--electron-api <url>', 'Electron API地址', 'http://127.0.0.1:9528')
     .option('--port-range <range>', '检测端口范围', '9711-9720')
     .action(async (options) => {
         console.log('🔍 开始端口诊断...\n')

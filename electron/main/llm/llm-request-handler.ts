@@ -63,7 +63,7 @@ export class LLMRequestHandler {
                 if (llmControllerModule?.LLMController) {
                     const LLMController = llmControllerModule.LLMController;
                     this.llmController = new LLMController({
-                        electronApiUrl: 'http://localhost:9528',
+                        electronApiUrl: 'http://127.0.0.1:9528',
                         timeout: 30000
                     });
                 } else {

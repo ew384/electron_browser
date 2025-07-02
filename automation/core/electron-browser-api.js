@@ -3,7 +3,7 @@
 
 export class ElectronBrowserAPI {
     constructor(config = {}) {
-        this.baseUrl = config.baseUrl || 'http://localhost:9528'
+        this.baseUrl = config.baseUrl || 'http://127.0.0.1:9528'
         this.timeout = config.timeout || 5000
         this.retryAttempts = config.retryAttempts || 3
         this.retryDelay = config.retryDelay || 1000

@@ -8,7 +8,7 @@ class LLMServer {
     constructor(config = {}) {
         this.config = {
             port: config.port || 3212,
-            electronApiUrl: config.electronApiUrl || 'http://localhost:9528',
+            electronApiUrl: config.electronApiUrl || 'http://127.0.0.1:9528',
             corsOrigin: config.corsOrigin || '*',
             timeout: config.timeout || 30000,
             maxConcurrentSessions: config.maxConcurrentSessions || 20,
@@ -978,7 +978,7 @@ async function startLLMService() {
     try {
         const config = {
             port: process.env.LLM_PORT || 3212,
-            electronApiUrl: process.env.ELECTRON_API_URL || 'http://localhost:9528',
+            electronApiUrl: process.env.ELECTRON_API_URL || 'http://127.0.0.1:9528',
             maxConcurrentSessions: parseInt(process.env.MAX_CONCURRENT_SESSIONS) || 20,
             timeout: parseInt(process.env.LLM_TIMEOUT) || 30000
         };

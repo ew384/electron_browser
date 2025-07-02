@@ -278,7 +278,7 @@ export class HttpApiServer {
                 tabInfo = existingTab;
             } else {
                 console.log(`[HttpApiServer] 🔧 创建新标签页: ${url}`);
-                const newTabUrl = `http://localhost:${port}/json/new?${encodeURIComponent(url || 'about:blank')}`;
+                const newTabUrl = `http://127.0.0.1:${port}/json/new?${encodeURIComponent(url || 'about:blank')}`;
                 const tabData = await this.httpRequestPUT(newTabUrl);
                 tabInfo = JSON.parse(tabData);
 
@@ -314,7 +314,7 @@ export class HttpApiServer {
 
             // 🔧 使用平台适配器处理URL
             const processedUrl = this.platformAdapter.shouldUseIPv4Only() ?
-                urlString.replace('localhost', '127.0.0.1') : urlString;
+                urlString.replace('127.0.0.1', '127.0.0.1') : urlString;
 
             const urlObj = new URL(processedUrl);
 
@@ -1082,11 +1082,11 @@ export class HttpApiServer {
                         console.log(`[HttpApiServer] 详细检查端口 ${port} (账号: ${instance.accountId})`);
 
                         // 获取版本信息
-                        const versionData = await this.httpRequest(`http://localhost:${port}/json/version`);
+                        const versionData = await this.httpRequest(`http://127.0.0.1:${port}/json/version`);
                         const version = JSON.parse(versionData);
 
                         // 获取详细标签页信息
-                        const tabsData = await this.httpRequest(`http://localhost:${port}/json`);
+                        const tabsData = await this.httpRequest(`http://127.0.0.1:${port}/json`);
                         const allTabs: any[] = JSON.parse(tabsData);
 
                         // 分类标签页
@@ -1168,7 +1168,7 @@ export class HttpApiServer {
             const WebSocket = require('ws');
 
             // 🔧 使用平台适配器格式化WebSocket URL
-            const wsUrl = this.platformAdapter.formatWebSocketURL('localhost', port, `/devtools/page/${tabId}`);
+            const wsUrl = this.platformAdapter.formatWebSocketURL('127.0.0.1', port, `/devtools/page/${tabId}`);
             console.log(`[HttpApiServer] 🔗 WebSocket连接: ${wsUrl}`);
 
             const ws = new WebSocket(wsUrl);
@@ -1255,7 +1255,7 @@ export class HttpApiServer {
             const WebSocket = require('ws');
 
             // 🔧 使用平台适配器格式化URL
-            const wsUrl = this.platformAdapter.formatWebSocketURL('localhost', port, `/devtools/page/${tabId}`);
+            const wsUrl = this.platformAdapter.formatWebSocketURL('127.0.0.1', port, `/devtools/page/${tabId}`);
             const ws = new WebSocket(wsUrl);
 
             let resolved = false;
@@ -1416,11 +1416,11 @@ export class HttpApiServer {
             console.log(`[HttpApiServer] 验证Chrome实例端口 ${port}...`);
 
             // 获取版本信息
-            const versionData = await this.httpRequest(`http://localhost:${port}/json/version`);
+            const versionData = await this.httpRequest(`http://127.0.0.1:${port}/json/version`);
             console.log(`[HttpApiServer] 端口 ${port} 版本信息:`, versionData.substring(0, 100) + '...');
 
             // 获取标签页信息
-            const tabsData = await this.httpRequest(`http://localhost:${port}/json`);
+            const tabsData = await this.httpRequest(`http://127.0.0.1:${port}/json`);
             const tabs: any[] = JSON.parse(tabsData);
 
             console.log(`[HttpApiServer] 端口 ${port} 标签页数量: ${tabs.length}`);
@@ -1450,7 +1450,7 @@ export class HttpApiServer {
     private async getChromeTabsInfo(port: number): Promise<any[]> {
         try {
             console.log(`[HttpApiServer] 获取端口 ${port} 的标签页详情...`);
-            const tabsData = await this.httpRequest(`http://localhost:${port}/json`);
+            const tabsData = await this.httpRequest(`http://127.0.0.1:${port}/json`);
             const tabs: any[] = JSON.parse(tabsData);
 
             console.log(`[HttpApiServer] 端口 ${port} 所有标签页:`);
@@ -1477,7 +1477,7 @@ export class HttpApiServer {
 
             // 🔧 使用平台适配器处理URL
             const processedUrl = this.platformAdapter.shouldUseIPv4Only() ?
-                urlString.replace('localhost', '127.0.0.1') : urlString;
+                urlString.replace('127.0.0.1', '127.0.0.1') : urlString;
 
             console.log(`[HttpApiServer] 🔗 HTTP请求 (${process.platform}): ${processedUrl}`);
 
