@@ -174,7 +174,7 @@ export default {
       currentAgent: {
         id: 1,
         name: 'Browser Agent',
-        description: 'Hi there, what can I help with?'
+        description: '您好！我可以帮您完成内容创作和发布。'
       },
       quickActions: [
         {
@@ -206,25 +206,141 @@ export default {
   },
   computed: {
     canSend() {
-      return (this.inputMessage.trim() || this.attachedFiles.length > 0) && !this.isLoading
+      return (
+        (this.inputMessage.trim() || this.attachedFiles.length > 0) &&
+        this.isConnected &&
+        !this.isLoading
+      ) // 🆕 添加连接状态检查
     }
   },
+
   mounted() {
-    // 聚焦输入框
+    this.connectToAgent()
     this.$nextTick(() => {
       if (this.$refs.messageInput) {
         this.$refs.messageInput.focus()
       }
     })
   },
+
+  beforeDestroy() {
+    this.disconnectFromAgent()
+  },
+
   methods: {
+    // 🆕 添加WebSocket连接方法
+    connectToAgent() {
+      const wsUrl = process.env.VUE_APP_AGENT_WS_URL || 'ws://localhost:3214'
+      console.log('连接到Agent服务:', wsUrl)
+
+      this.ws = new WebSocket(wsUrl)
+
+      this.ws.onopen = () => {
+        console.log('Agent WebSocket连接成功')
+        this.isConnected = true
+        this.$message.success('已连接到AI助手')
+      }
+
+      this.ws.onmessage = event => {
+        const data = JSON.parse(event.data)
+        console.log('收到Agent消息:', data)
+        this.handleAgentMessage(data)
+      }
+
+      this.ws.onclose = () => {
+        console.log('Agent WebSocket连接关闭')
+        this.isConnected = false
+
+        // 5秒后重连
+        setTimeout(() => {
+          if (!this.isConnected) {
+            this.connectToAgent()
+          }
+        }, 5000)
+      }
+
+      this.ws.onerror = error => {
+        console.error('Agent WebSocket错误:', error)
+        this.isConnected = false
+      }
+    },
+
+    disconnectFromAgent() {
+      if (this.ws) {
+        this.ws.close()
+        this.ws = null
+      }
+    },
+
+    // 🆕 处理Agent消息
+    handleAgentMessage(data) {
+      switch (data.type) {
+        case 'welcome':
+          this.sessionId = data.sessionId
+          this.addAssistantMessage(data.message)
+          break
+
+        case 'workflow_started':
+          this.addAssistantMessage(`🚀 ${data.message}`)
+          break
+
+        case 'need_more_info':
+        case 'need_clarification':
+          this.addAssistantMessage(data.message)
+          break
+
+        case 'step_executing':
+          this.isLoading = true
+          this.addAssistantMessage(`⚙️ ${data.message}`)
+          break
+
+        case 'step_completed':
+          this.isLoading = false
+          this.addAssistantMessage(`✅ ${data.message}`)
+          break
+
+        case 'workflow_completed':
+          this.isLoading = false
+          this.addAssistantMessage(`🎉 ${data.message}`)
+          if (data.summary) {
+            this.addAssistantMessage(data.summary)
+          }
+          break
+
+        case 'step_failed':
+        case 'error':
+          this.isLoading = false
+          this.addAssistantMessage(`❌ ${data.message}`)
+          break
+
+        default:
+          this.addAssistantMessage(JSON.stringify(data, null, 2))
+      }
+    },
+
+    // 🆕 添加助手消息的辅助方法
+    addAssistantMessage(content) {
+      const message = {
+        id: Date.now() + Math.random(),
+        type: 'assistant',
+        content: content,
+        timestamp: Date.now()
+      }
+
+      this.messages.push(message)
+      this.$nextTick(() => {
+        this.scrollToBottom()
+      })
+    },
+
+    // 🆕 修改发送消息方法
     async sendMessage() {
       if (!this.canSend) return
 
       const messageContent = this.inputMessage.trim()
       const attachments = [...this.attachedFiles]
 
-      // 创建用户消息
+      // 创建用户消息（保持原有UI）
       const userMessage = {
         id: Date.now(),
         type: 'user',
@@ -235,6 +351,17 @@ export default {
 
       this.messages.push(userMessage)
 
+      // 🆕 发送到Agent
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(
+          JSON.stringify({
+            type: 'user_message',
+            content: messageContent,
+            attachments: attachments
+          })
+        )
+      }
+
       // 清空输入
       this.inputMessage = ''
       this.attachedFiles = []
@@ -243,13 +370,9 @@ export default {
       this.$nextTick(() => {
         this.scrollToBottom()
       })
-
-      // TODO: 接入大模型API
-      // this.isLoading = true
-      console.log('发送消息:', messageContent)
-      console.log('附件:', attachments)
     },
 
+    // 其他方法保持不变...
     sendQuickMessage(message) {
       this.inputMessage = message
       this.sendMessage()
@@ -260,14 +383,12 @@ export default {
     },
 
     handleFileUpload(file) {
-      // 检查文件大小限制 (10MB)
       const maxSize = 10 * 1024 * 1024
       if (file.size > maxSize) {
         this.$message.error('文件大小不能超过 10MB')
         return false
       }
 
-      // 添加文件到附件列表
       const fileObj = {
         id: Date.now() + Math.random(),
         name: file.name,
@@ -278,7 +399,7 @@ export default {
 
       this.attachedFiles.push(fileObj)
       this.$message.success(`文件 "${file.name}" 已添加`)
-      return false // 阻止自动上传
+      return false
     },
 
     removeFile(fileId) {
