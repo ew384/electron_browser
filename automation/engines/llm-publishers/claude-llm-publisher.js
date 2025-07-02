@@ -406,15 +406,22 @@ export class ClaudeLLMPublisher {
             if (prompt) {
                 const sendResult = await this.sendPromptMessage(prompt);
                 if (!sendResult.success) {
-                    throw new Error(sendResult.error);
-                }
+                    console.warn('[Claude] 发送失败，但尝试继续等待响应:', sendResult.error);
 
-                // 等待响应
-                const responseResult = await this.waitForResponse();
-                if (!responseResult.success) {
-                    throw new Error(responseResult.error);
-                }
+                    // 即使发送脚本失败，也尝试等待响应（可能消息已经发送）
+                    const responseResult = await this.waitForResponse();
 
+                    if (responseResult.success) {
+                        console.log('[Claude] ✅ 虽然发送脚本失败，但响应等待成功');
+                    } else {
+                        throw new Error(`发送和响应都失败: ${sendResult.error}`);
+                    }
+                } else {
+                    const responseResult = await this.waitForResponse();
+                    if (!responseResult.success) {
+                        throw new Error(responseResult.error);
+                    }
+                }
                 // 提取并格式化响应
                 const extractedContent = await this.extractPageContent();
 
@@ -522,17 +529,81 @@ export class ClaudeLLMPublisher {
                 awaitPromise: true,
                 timeout: 30000
             });
+            // 🆕 改进响应解析逻辑
+            console.log('[Claude] 脚本执行结果:', {
+                success: result.success,
+                hasResult: !!result.result,
+                resultType: typeof result.result,
+                error: result.error
+            });
 
-            const sendResult = result.result.value || result.result;  // 🔧 修复
-            if (result.success && sendResult.success) {
+            // 检查脚本执行是否成功
+            if (!result.success) {
+                console.warn('[Claude] 脚本执行失败，但消息可能已发送:', result.error);
+
+                // 🆕 即使脚本失败，也可能消息已经发送成功
+                // 可以通过检查页面状态来确认
+                const verifyScript = `
+                (function() {
+                    try {
+                        // 检查是否有新的消息在生成
+                        const hasGenerating = document.querySelector('[data-testid="conversation-turn-loading"]') !== null;
+                        const hasSupportLink = document.querySelector('a[href*="claude-is-providing-incorrect-or-misleading-responses"]') !== null;
+                        
+                        return {
+                            success: true,
+                            messagesSent: hasGenerating || hasSupportLink,
+                            generating: hasGenerating,
+                            completed: hasSupportLink
+                        };
+                    } catch (e) {
+                        return { success: false, error: e.message };
+                    }
+                })()
+            `;
+
+                try {
+                    const verifyResult = await this.llmController.executeLLMScript(this.session, verifyScript);
+                    const verifyData = verifyResult.result?.value || verifyResult.result;
+
+                    if (verifyData && verifyData.messagesSent) {
+                        console.log('[Claude] ✅ 虽然脚本失败，但消息已成功发送');
+                        return { success: true };
+                    }
+                } catch (verifyError) {
+                    console.warn('[Claude] 验证消息发送状态失败:', verifyError.message);
+                }
+
+                return {
+                    success: false,
+                    error: result.error || '脚本执行失败'
+                };
+            }
+
+            // 🆕 安全地解析结果
+            let sendResult = null;
+
+            if (result.result && typeof result.result === 'object') {
+                sendResult = result.result.value || result.result;
+            } else {
+                sendResult = result.result;
+            }
+
+            // 检查发送结果
+            if (sendResult && sendResult.success) {
                 console.log('[Claude] ✅ 消息发送成功');
                 return { success: true };
             } else {
-                throw new Error(sendResult?.error || '消息发送失败');
+                const errorMsg = sendResult?.error || '消息发送失败';
+                console.error('[Claude] 消息发送失败:', errorMsg);
+                return {
+                    success: false,
+                    error: errorMsg
+                };
             }
 
         } catch (error) {
-            console.error('[Claude] 消息发送失败:', error.message);
+            console.error('[Claude] 消息发送异常:', error.message);
             return {
                 success: false,
                 error: error.message
@@ -1012,7 +1083,6 @@ export class ClaudeLLMPublisher {
             });
 
             if (result.success && result.result) {
-                //const extractedContent = result.result.value || result.result;
                 const extractedContent = result.result?.value || result.result;
                 if (extractedContent.error) {
                     throw new Error(extractedContent.error);
