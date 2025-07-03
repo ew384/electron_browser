@@ -83,7 +83,8 @@ export class ChromeController {
                         script: script,
                         returnByValue: true,
                         awaitPromise: true
-                    })
+                    }),
+                    timeout: 720000
                 }
             )
 
@@ -130,7 +131,34 @@ export class ChromeController {
             throw error
         }
     }
+    // 🔧 新增：直接文件上传方法
+    async uploadFileDirectly(session, selector, filePath) {
+        console.log(`📤 使用 DevTools Protocol 直接上传文件: ${filePath}`)
+        
+        try {
+            const response = await this.httpRequest(
+                `${this.config.electronApiUrl}/api/browser/${session.accountId}/tabs/${session.tabId}/set-file-input`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        selector: selector,
+                        filePath: filePath
+                    })
+                }
+            )
 
+            if (!response.success) {
+                throw new Error(response.error)
+            }
+
+            console.log(`✅ 文件直接上传成功: ${filePath}`)
+            return response
+
+        } catch (error) {
+            console.error(`❌ DevTools Protocol 文件上传失败: ${error.message}`)
+            throw error
+        }
+    }
     // 🔧 简化：通过HTTP API导航页面
     async navigateToUploadPage(session) {
         const platformConfig = await this.getPlatformConfig(session.platform)
@@ -264,6 +292,7 @@ export class ChromeController {
             headers: {
                 'Content-Type': 'application/json'
             },
+            timeout: 15000,
             ...options
         }
 

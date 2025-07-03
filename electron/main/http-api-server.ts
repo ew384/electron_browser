@@ -129,6 +129,12 @@ export class HttpApiServer {
                 const accountId = pathParts[3];
                 await this.handleGetTabs(req, res, accountId);
             }
+            else if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+\/set-file-input$/)) {
+            const pathParts = pathname.split('/');
+            const accountId = pathParts[3];
+            const tabId = pathParts[5];
+            await this.handleSetFileInput(req, res, accountId, tabId);
+        }
             // 路由处理（保持原有逻辑）
             if (method === 'POST' && pathname?.match(/^\/api\/browser\/[^/]+\/tabs\/[^/]+\/execute-script$/)) {
                 const pathParts = pathname.split('/');
@@ -379,9 +385,23 @@ export class HttpApiServer {
             }
 
             const body = await this.readRequestBody(req);
-            const { script, awaitPromise = false, returnByValue = true } = JSON.parse(body);
+            console.log(`[DEBUG] 请求体长度: ${body.length}`);
+            
+            let parsedBody;
+            try {
+                parsedBody = JSON.parse(body);
+                console.log(`[DEBUG] 请求体解析成功, 脚本长度: ${parsedBody.script?.length || 0}`);
+            } catch (parseError) {
+                console.error(`[DEBUG] 请求体解析失败:`, parseError);
+                res.writeHead(400);
+                res.end(JSON.stringify({ success: false, error: 'Invalid JSON in request body' }));
+                return;
+            }
+
+            const { script, awaitPromise = false, returnByValue = true } = parsedBody;
 
             if (!script) {
+                console.log(`[DEBUG] 脚本为空`);
                 res.writeHead(400);
                 res.end(JSON.stringify({ success: false, error: 'Script is required' }));
                 return;
@@ -391,9 +411,20 @@ export class HttpApiServer {
             const session = this.tabSessions.get(sessionKey);
             if (session) {
                 session.lastUsed = Date.now();
+                console.log(`[DEBUG] 会话更新: ${sessionKey}`);
+            } else {
+                console.log(`[DEBUG] 会话不存在: ${sessionKey}`);
             }
+            console.log(`[DEBUG] 开始执行脚本...`);
+            const scriptPromise = this.executeScriptInTab(port, tabId, script, { awaitPromise, returnByValue });
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => {
+                    reject(new Error('Script execution timeout (600s)'));
+                }, 600000); // 10分钟
+            });
 
-            const result = await this.executeScriptInTab(port, tabId, script, { awaitPromise, returnByValue });
+            const result = await Promise.race([scriptPromise, timeoutPromise]);
+            console.log(`[DEBUG] 脚本执行完成, 结果类型: ${typeof result}`);
 
             res.writeHead(200);
             res.end(JSON.stringify({
@@ -403,15 +434,24 @@ export class HttpApiServer {
                 sessionKey: sessionKey,
                 platform: process.platform
             }));
-
+            console.log(`[DEBUG] 响应已发送`);
         } catch (error) {
-            console.error('[HttpApiServer] Execute script in tab error:', error);
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-                platform: process.platform
-            }));
+            console.error('[DEBUG] handleExecuteScriptInTab 异常:', error);
+            if (!res.headersSent) {
+                res.writeHead(500);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: error instanceof Error ? error.message : String(error),
+                    platform: process.platform,
+                    debug: {
+                        errorType: error,
+                        accountId: accountId,
+                        tabId: tabId
+                    }
+                }));
+            } else {
+                console.error('[DEBUG] 响应头已发送，无法发送错误响应');
+            }
         }
     }
 
@@ -508,7 +548,238 @@ export class HttpApiServer {
             }));
         }
     }
+    // 🔧 新增：直接设置文件输入框的文件
+    private async handleSetFileInput(req: http.IncomingMessage, res: http.ServerResponse, accountId: string, tabId: string): Promise<void> {
+        try {
+            const port = this.windowManager.getChromeDebugPort(accountId);
+            if (!port) {
+                res.writeHead(404);
+                res.end(JSON.stringify({ success: false, error: 'Browser instance not running' }));
+                return;
+            }
 
+            const body = await this.readRequestBody(req);
+            const { selector, filePath } = JSON.parse(body);
+
+            if (!selector || !filePath) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ success: false, error: 'Selector and filePath are required' }));
+                return;
+            }
+
+            console.log(`[DEBUG] 设置文件输入框 - 选择器: ${selector}, 文件: ${filePath}`);
+
+            // 检查文件是否存在
+            const fs = require('fs');
+            if (!fs.existsSync(filePath)) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ success: false, error: `File not found: ${filePath}` }));
+                return;
+            }
+
+            const result = await this.setFileInputFiles(port, tabId, selector, filePath);
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                success: true,
+                result: result,
+                tabId: tabId,
+                filePath: filePath
+            }));
+
+        } catch (error) {
+            console.error('[HttpApiServer] Set file input error:', error);
+            res.writeHead(500);
+            res.end(JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }));
+        }
+    }
+    // 🔧 使用 Chrome DevTools Protocol 直接设置文件
+    private async setFileInputFiles(port: number, tabId: string, selector: string, filePath: string): Promise<any> {
+        console.log(`[DEBUG] 使用 CDP 设置文件: ${filePath}`);
+
+        return new Promise((resolve, reject) => {
+            const WebSocket = require('ws');
+            const path = require('path');
+
+            const wsUrl = this.platformAdapter.formatWebSocketURL('127.0.0.1', port, `/devtools/page/${tabId}`);
+            const ws = new WebSocket(wsUrl);
+
+            let resolved = false;
+            let timeoutId: NodeJS.Timeout;
+            let nodeId: number | null = null;
+
+            const cleanup = () => {
+                if (timeoutId) clearTimeout(timeoutId);
+                if (ws.readyState === WebSocket.OPEN) ws.close();
+            };
+
+            const handleResolve = (result: any) => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                resolve(result);
+            };
+
+            const handleReject = (error: Error) => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                reject(error);
+            };
+
+            ws.on('open', async () => {
+                console.log(`[DEBUG] CDP WebSocket 已连接，开始设置文件`);
+
+                try {
+                    // 步骤1: 启用必要的域
+                    await this.sendCDPCommandSync(ws, 'DOM.enable', {});
+                    await this.sendCDPCommandSync(ws, 'Runtime.enable', {});
+
+                    // 步骤2: 获取文档根节点
+                    const documentResult = await this.sendCDPCommandSync(ws, 'DOM.getDocument', {});
+                    const rootNodeId = documentResult.root.nodeId;
+
+                    // 步骤3: 查找文件输入框节点
+                    console.log(`[DEBUG] 查找选择器: ${selector}`);
+                    const queryResult = await this.sendCDPCommandSync(ws, 'DOM.querySelector', {
+                        nodeId: rootNodeId,
+                        selector: selector
+                    });
+
+                    if (!queryResult.nodeId) {
+                        // 如果在主文档中没找到，尝试在 shadow DOM 中查找
+                        console.log(`[DEBUG] 在主文档中未找到，尝试在 shadow DOM 中查找`);
+                        
+                        // 查找 wujie-app 元素
+                        const wujieResult = await this.sendCDPCommandSync(ws, 'DOM.querySelector', {
+                            nodeId: rootNodeId,
+                            selector: 'wujie-app'
+                        });
+
+                        if (wujieResult.nodeId) {
+                            // 获取 shadow root
+                            const shadowRootResult = await this.sendCDPCommandSync(ws, 'DOM.describeShadowRoot', {
+                                nodeId: wujieResult.nodeId
+                            });
+
+                            if (shadowRootResult && shadowRootResult.shadowRoot) {
+                                // 在 shadow DOM 中查找
+                                const shadowQueryResult = await this.sendCDPCommandSync(ws, 'DOM.querySelector', {
+                                    nodeId: shadowRootResult.shadowRoot.nodeId,
+                                    selector: selector
+                                });
+
+                                if (shadowQueryResult.nodeId) {
+                                    nodeId = shadowQueryResult.nodeId;
+                                    console.log(`[DEBUG] 在 shadow DOM 中找到节点: ${nodeId}`);
+                                }
+                            }
+                        }
+                    } else {
+                        nodeId = queryResult.nodeId;
+                        console.log(`[DEBUG] 在主文档中找到节点: ${nodeId}`);
+                    }
+
+                    if (!nodeId) {
+                        throw new Error(`未找到选择器对应的节点: ${selector}`);
+                    }
+
+                    // 步骤4: 设置文件到输入框
+                    console.log(`[DEBUG] 设置文件到节点 ${nodeId}: ${filePath}`);
+                    
+                    // 转换为绝对路径
+                    const absolutePath = path.resolve(filePath);
+                    console.log(`[DEBUG] 绝对路径: ${absolutePath}`);
+
+                    const setFilesResult = await this.sendCDPCommandSync(ws, 'DOM.setFileInputFiles', {
+                        files: [absolutePath],
+                        nodeId: nodeId
+                    });
+
+                    console.log(`[DEBUG] 文件设置成功`);
+
+                    // 步骤5: 触发 change 事件
+                    const triggerResult = await this.sendCDPCommandSync(ws, 'Runtime.evaluate', {
+                        expression: `
+                            (function() {
+                                const fileInput = document.querySelector('${selector}') || 
+                                                document.querySelector('wujie-app').shadowRoot.querySelector('${selector}');
+                                if (fileInput) {
+                                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                                    fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                    return { success: true, files: fileInput.files.length };
+                                }
+                                return { success: false, error: 'Input not found' };
+                            })()
+                        `,
+                        returnByValue: true
+                    });
+
+                    handleResolve({
+                        success: true,
+                        nodeId: nodeId,
+                        filePath: absolutePath,
+                        triggerResult: triggerResult.result?.value
+                    });
+
+                } catch (error) {
+                    console.error(`[DEBUG] CDP 操作失败:`, error);
+                }
+            });
+
+            ws.on('error', (error: any) => {
+                console.error(`[DEBUG] WebSocket 错误:`, error);
+                handleReject(new Error(`WebSocket error: ${error.message}`));
+            });
+
+            timeoutId = setTimeout(() => {
+                handleReject(new Error('File upload timeout (600s)'));
+            }, 600000);
+        });
+    }
+
+    // 🔧 辅助方法：同步发送 CDP 命令
+    private sendCDPCommandSync(ws: any, method: string, params: any = {}): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const commandId = this.commandIdCounter++;
+            const command = { id: commandId, method, params };
+
+            let resolved = false;
+            const timeoutId = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    reject(new Error(`CDP command timeout: ${method}`));
+                }
+            }, 10000);
+
+            const messageHandler = (data: any) => {
+                if (resolved) return;
+
+                try {
+                    const response = JSON.parse(data.toString());
+                    if (response.id === commandId) {
+                        resolved = true;
+                        clearTimeout(timeoutId);
+                        ws.off('message', messageHandler);
+
+                        if (response.error) {
+                            reject(new Error(`CDP Error: ${response.error.message}`));
+                        } else {
+                            resolve(response.result);
+                        }
+                    }
+                } catch (parseError) {
+                    // 忽略其他消息
+                }
+            };
+
+            ws.on('message', messageHandler);
+            ws.send(JSON.stringify(command));
+        });
+    }
     // ==================== 保留原有方法 ====================
 
     private async activateExistingTab(port: number, tabId: string): Promise<void> {
@@ -1162,15 +1433,16 @@ export class HttpApiServer {
     }
 
     private async executeScriptInTab(port: number, tabId: string, script: string, options: any = {}): Promise<any> {
-        console.log(`[HttpApiServer] 🎯 执行脚本 (标签页: ${tabId}, 平台: ${process.platform})`);
+        console.log(`[DEBUG] executeScriptInTab 开始 - 端口: ${port}, 标签页: ${tabId}`);
+        console.log(`[DEBUG] 脚本前100字符: ${script.substring(0, 100)}...`);
+        console.log(`[DEBUG] 选项:`, options);
 
         return new Promise((resolve, reject) => {
             const WebSocket = require('ws');
 
-            // 🔧 使用平台适配器格式化WebSocket URL
             const wsUrl = this.platformAdapter.formatWebSocketURL('127.0.0.1', port, `/devtools/page/${tabId}`);
-            console.log(`[HttpApiServer] 🔗 WebSocket连接: ${wsUrl}`);
-
+            console.log(`[DEBUG] WebSocket URL: ${wsUrl}`);
+            
             const ws = new WebSocket(wsUrl);
 
             let resolved = false;
@@ -1184,6 +1456,7 @@ export class HttpApiServer {
             const handleResolve = (result: any) => {
                 if (resolved) return;
                 resolved = true;
+                console.log(`[DEBUG] 脚本执行成功解析:`, typeof result);
                 cleanup();
                 resolve(result);
             };
@@ -1191,13 +1464,15 @@ export class HttpApiServer {
             const handleReject = (error: Error) => {
                 if (resolved) return;
                 resolved = true;
+                console.error(`[DEBUG] 脚本执行失败:`, error.message);
                 cleanup();
                 reject(error);
             };
 
             ws.on('open', () => {
-                console.log(`[HttpApiServer] ✅ WebSocket连接成功 (${process.platform})`);
+                console.log(`[DEBUG] WebSocket 连接已建立`);
                 const commandId = this.commandIdCounter++;
+                console.log(`[DEBUG] 命令ID: ${commandId}`);
 
                 const command = {
                     id: commandId,
@@ -1205,11 +1480,12 @@ export class HttpApiServer {
                     params: {
                         expression: script,
                         returnByValue: options.returnByValue !== false,
-                        awaitPromise: options.awaitPromise || false,
-                        timeout: 30000
+                        awaitPromise: options.awaitPromise || false
+                        // 🔧 移除 timeout 参数
                     }
                 };
 
+                console.log(`[DEBUG] 发送命令:`, JSON.stringify(command, null, 2));
                 ws.send(JSON.stringify(command));
 
                 const messageHandler = (data: any) => {
@@ -1217,15 +1493,20 @@ export class HttpApiServer {
 
                     try {
                         const response = JSON.parse(data.toString());
+                        console.log(`[DEBUG] 收到响应:`, JSON.stringify(response, null, 2));
+                        
                         if (response.id === commandId) {
                             if (response.error) {
+                                console.error(`[DEBUG] CDP 错误:`, response.error);
                                 handleReject(new Error(`CDP Error: ${response.error.message}`));
                             } else {
                                 const simplifiedResult = response.result?.result?.value || response.result;
+                                console.log(`[DEBUG] 提取结果:`, typeof simplifiedResult, simplifiedResult);
                                 handleResolve({ value: simplifiedResult });
                             }
                         }
                     } catch (parseError) {
+                        console.error(`[DEBUG] 响应解析错误:`, parseError);
                         handleReject(new Error(`Response parse error: ${parseError}`));
                     }
                 };
@@ -1234,17 +1515,19 @@ export class HttpApiServer {
             });
 
             ws.on('error', (error: any) => {
-                console.error(`[HttpApiServer] ❌ WebSocket错误 (${process.platform}):`, error);
+                console.error(`[DEBUG] WebSocket 错误:`, error);
                 handleReject(new Error(`WebSocket error: ${error.message}`));
             });
 
             ws.on('close', (code: number, reason: string) => {
+                console.log(`[DEBUG] WebSocket 关闭: ${code} ${reason}`);
                 if (!resolved) {
                     handleReject(new Error(`WebSocket closed unexpectedly: ${code} ${reason}`));
                 }
             });
 
             timeoutId = setTimeout(() => {
+                console.error(`[DEBUG] 脚本执行超时`);
                 handleReject(new Error('Script execution timeout (30s)'));
             }, 30000);
         });

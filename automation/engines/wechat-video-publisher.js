@@ -111,132 +111,309 @@ export class WeChatVideoPublisher {
         throw new Error(`${fieldType}填写失败，已尝试${maxRetries}次`)
     }
 
-    // 直接替换 wechat-video-publisher.js 中的 uploadFileToWeChatIframe 方法
-
     async uploadFileToWeChatIframe(filePath) {
         console.log('📤 上传文件到微信视频号...')
 
-        if (!fs.existsSync(filePath)) {
-            throw new Error(`文件不存在: ${filePath}`)
+        const fileStats = fs.statSync(filePath)
+        const fileSizeMB = fileStats.size / (1024 * 1024)
+        console.log(`📁 文件大小: ${fileSizeMB.toFixed(2)} MB`)
+
+        if (fileSizeMB > 100) {
+            throw new Error(`文件过大 (${fileSizeMB.toFixed(2)} MB)，请使用小于 100MB 的文件`)
         }
 
-        const fileBuffer = fs.readFileSync(filePath)
-        const base64Data = fileBuffer.toString('base64')
+        // 🔧 改进的上传方案：分块处理 + 增加超时时间
+        return await this.uploadWithImprovedMethod(filePath)
+    }
+
+    async uploadWithImprovedMethod(filePath) {
         const fileName = path.basename(filePath)
         const mimeType = this.getMimeType(filePath)
+        
+        try {
+            // 第一步：准备页面
+            await this.prepareUploadPage()
+            
+            // 第二步：分块读取和处理文件
+            const fileData = await this.processFileInChunks(filePath)
+            
+            // 第三步：执行上传
+            const uploadResult = await this.executeFileUploadWithChunks(fileName, mimeType, fileData)
+            
+            return uploadResult
+            
+        } catch (error) {
+            throw new Error(`改进上传方法失败: ${error.message}`)
+        }
+    }
 
+    async prepareUploadPage() {
         const script = `
-        (function() {
-            try {
-                // 🔧 在 shadow DOM 中查找元素
-                const wujieApp = document.querySelector('wujie-app');
-                if (!wujieApp || !wujieApp.shadowRoot) {
-                    throw new Error('未找到 wujie-app 或 shadow DOM');
-                }
-                
-                const shadowDoc = wujieApp.shadowRoot;
-                
-                // 查找上传区域
-                const uploadArea = shadowDoc.querySelector('.center');
-                if (!uploadArea) {
-                    throw new Error('未找到上传区域 (.center)');
-                }
-                
-                let fileInput = null;
-
-                // 1. 首先尝试直接查找
-                fileInput = shadowDoc.querySelector('input[type="file"]');
-
-                // 2. 如果没找到，尝试在上传区域内查找
-                if (!fileInput && uploadArea) {
-                    fileInput = uploadArea.querySelector('input[type="file"]');
-                }
-
-                // 3. 尝试备选选择器（从平台配置中获取）
-                if (!fileInput) {
-                    const altSelectors = ['input[accept*="video"]', 'input[accept*="*"]', '.upload-input input[type="file"]'];
-                    for (const selector of altSelectors) {
-                        fileInput = shadowDoc.querySelector(selector);
-                        if (fileInput) break;
+            (function() {
+                try {
+                    // 等待页面完全加载
+                    if (document.readyState !== 'complete') {
+                        return { success: false, error: '页面未完全加载' };
                     }
-                }
-
-                // 4. 如果还没找到，检查是否需要触发上传区域来创建输入框
-                if (!fileInput) {
-                    console.log('未找到文件输入框，尝试点击上传区域创建输入框...');
+                    
+                    const wujieApp = document.querySelector('wujie-app');
+                    if (!wujieApp || !wujieApp.shadowRoot) {
+                        return { success: false, error: '未找到 wujie-app 或 shadow DOM' };
+                    }
+                    
+                    const shadowDoc = wujieApp.shadowRoot;
+                    const uploadArea = shadowDoc.querySelector('.center');
+                    if (!uploadArea) {
+                        return { success: false, error: '未找到上传区域' };
+                    }
+                    
+                    // 确保上传区域可见
+                    uploadArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     uploadArea.click();
                     
-                    // 等待输入框创建
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    return { success: true, ready: true };
                     
-                    fileInput = shadowDoc.querySelector('input[type="file"]');
+                } catch (e) {
+                    return { success: false, error: e.message };
                 }
-                if (!fileInput) {
-                    const debugInfo = {
-                        uploadAreaFound: !!uploadArea,
-                        uploadAreaClass: uploadArea?.className,
-                        shadowDocContent: shadowDoc.querySelector('.center')?.outerHTML?.substring(0, 500),
-                        allInputs: Array.from(shadowDoc.querySelectorAll('input')).map(input => ({
-                            type: input.type,
-                            accept: input.accept,
-                            className: input.className
-                        }))
+            })()
+        `;
+        
+        const result = await this.executeScript(script)
+        if (!result.result.value.success) {
+            throw new Error(`页面准备失败: ${result.result.value.error}`)
+        }
+        
+        await this.delay(2000)
+    }
+
+    async processFileInChunks(filePath) {
+        console.log('📊 优化分块处理文件...')
+        
+        const fileStats = fs.statSync(filePath)
+        const fileSizeMB = fileStats.size / (1024 * 1024)
+        
+        // 🔧 根据文件大小动态调整块大小
+        let chunkSize
+        if (fileSizeMB < 20) {
+            chunkSize = 10 * 1024 * 1024  // 小文件：10MB 块
+        } else if (fileSizeMB < 50) {
+            chunkSize = 5 * 1024 * 1024   // 中等文件：5MB 块
+        } else {
+            chunkSize = 2 * 1024 * 1024   // 大文件：2MB 块
+        }
+        
+        console.log(`📁 文件大小: ${fileSizeMB.toFixed(2)} MB`)
+        console.log(`📦 块大小: ${(chunkSize / 1024 / 1024).toFixed(2)} MB`)
+        
+        const chunks = []
+        const fileBuffer = fs.readFileSync(filePath)
+        
+        console.log('🔄 开始分块处理...')
+        for (let i = 0; i < fileBuffer.length; i += chunkSize) {
+            const chunk = fileBuffer.slice(i, i + chunkSize)
+            const base64Chunk = chunk.toString('base64')
+            chunks.push(base64Chunk)
+            
+            // 报告进度
+            const progress = ((i / fileBuffer.length) * 100).toFixed(1)
+            console.log(`   进度: ${progress}% (块 ${chunks.length})`)
+            
+            // 每处理几块就释放内存
+            if (chunks.length % 5 === 0 && global.gc) {
+                global.gc()
+            }
+        }
+        
+        console.log(`✅ 分块完成: ${chunks.length} 块`)
+        
+        return {
+            chunks: chunks,
+            totalSize: fileBuffer.length,
+            chunkSize: chunkSize,
+            chunkCount: chunks.length
+        }
+    }
+    async executeFileUploadWithChunks(fileName, mimeType, fileData) {
+        console.log('🚀 执行分块文件上传...')
+        
+        // 🔧 修复：移除脚本中的 await，使用 Promise 和 setTimeout
+        const uploadScript = `
+            (function() {
+                try {
+                    console.log('开始分块文件上传...');
+                    const startTime = Date.now();
+                    
+                    const wujieApp = document.querySelector('wujie-app');
+                    if (!wujieApp || !wujieApp.shadowRoot) {
+                        throw new Error('未找到 wujie-app 或 shadow DOM');
+                    }
+                    
+                    const shadowDoc = wujieApp.shadowRoot;
+                    
+                    let fileInput = shadowDoc.querySelector('input[type="file"]');
+                    if (!fileInput) {
+                        const uploadArea = shadowDoc.querySelector('.center');
+                        if (!uploadArea) {
+                            throw new Error('未找到上传区域');
+                        }
+                        
+                        uploadArea.click();
+                        
+                        // 🔧 修复：使用同步等待，不使用 await
+                        let attempts = 0;
+                        const maxAttempts = 20; // 最多等待 4 秒
+                        
+                        while (!fileInput && attempts < maxAttempts) {
+                            fileInput = shadowDoc.querySelector('input[type="file"]');
+                            if (!fileInput) {
+                                // 同步等待 200ms
+                                const waitStart = Date.now();
+                                while (Date.now() - waitStart < 200) {
+                                    // 忙等待
+                                }
+                                attempts++;
+                            }
+                        }
+                    }
+                    
+                    if (!fileInput) {
+                        throw new Error('无法创建文件输入框');
+                    }
+                    
+                    console.log('开始重新组装文件数据...');
+                    
+                    // 🔧 在浏览器中重新组装 base64 数据
+                    const chunks = ${JSON.stringify(fileData.chunks)};
+                    console.log('文件块数量:', chunks.length);
+                    
+                    const fullBase64 = chunks.join('');
+                    console.log('Base64 数据长度:', fullBase64.length);
+                    
+                    console.log('开始解码 Base64...');
+                    const byteCharacters = atob(fullBase64);
+                    console.log('字节字符长度:', byteCharacters.length);
+                    
+                    // 🔧 分批处理字节转换，使用同步方式
+                    const byteNumbers = new Array(byteCharacters.length);
+                    const batchSize = 50000; // 减少批大小，避免阻塞
+                    
+                    console.log('开始字节转换...');
+                    for (let i = 0; i < byteCharacters.length; i += batchSize) {
+                        const end = Math.min(i + batchSize, byteCharacters.length);
+                        
+                        for (let j = i; j < end; j++) {
+                            byteNumbers[j] = byteCharacters.charCodeAt(j);
+                        }
+                        
+                        // 每处理一批就报告进度
+                        if (i % (batchSize * 10) === 0) {
+                            const progress = ((i / byteCharacters.length) * 100).toFixed(1);
+                            console.log('字节转换进度:', progress + '%');
+                        }
+                    }
+                    
+                    console.log('创建 Blob 对象...');
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], { type: '${mimeType}' });
+                    
+                    console.log('创建 File 对象...');
+                    const file = new File([blob], '${fileName}', {
+                        type: '${mimeType}',
+                        lastModified: Date.now()
+                    });
+                    
+                    console.log('设置文件到输入框...');
+                    // 设置文件
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    Object.defineProperty(fileInput, 'files', {
+                        value: dataTransfer.files,
+                        configurable: true
+                    });
+                    
+                    console.log('触发事件...');
+                    // 触发事件
+                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    
+                    const endTime = Date.now();
+                    console.log('分块上传完成，总耗时:', endTime - startTime, 'ms');
+                    
+                    return {
+                        success: true,
+                        fileName: '${fileName}',
+                        fileSize: ${fileData.totalSize},
+                        chunks: ${fileData.chunks.length},
+                        executionTime: endTime - startTime
                     };
                     
-                    console.log('调试信息:', JSON.stringify(debugInfo, null, 2));
-                    throw new Error('未找到文件上传输入框。调试信息:${JSON.stringify(debugInfo)}');
+                } catch (e) {
+                    console.error('分块上传失败:', e);
+                    return { 
+                        success: false, 
+                        error: e.message,
+                        stack: e.stack
+                    };
                 }
-                
-                // 创建File对象
-                const byteCharacters = atob('${base64Data}');
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: '${mimeType}' });
-                const file = new File([blob], '${fileName}', {
-                    type: '${mimeType}',
-                    lastModified: Date.now()
-                });
-                
-                // 设置文件
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                Object.defineProperty(fileInput, 'files', {
-                    value: dataTransfer.files,
-                    configurable: true
-                });
-                
-                // 触发事件
-                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                uploadArea.dispatchEvent(new Event('drop', { 
-                    bubbles: true,
-                    dataTransfer: dataTransfer 
-                }));
-                
-                return {
-                    success: true,
-                    fileName: '${fileName}',
-                    fileSize: ${fileBuffer.length}
-                };
-                
-            } catch (e) {
-                return { success: false, error: e.message };
-            }
-        })()
-    `
-
-        const result = await this.executeScript(script)
+            })()
+        `;
+        
+        console.log('🚀 开始执行上传脚本...')
+        
+        // 🔧 增加脚本执行超时时间到 3 分钟
+        const result = await this.executeScriptWithTimeout(uploadScript, 180000)
+        
         const uploadResult = result.result.value
-
         if (!uploadResult.success) {
-            throw new Error(`文件上传失败: ${uploadResult.error}`)
+            throw new Error(`分块上传失败: ${uploadResult.error}`)
         }
-
-        console.log(`✅ 文件上传成功: ${uploadResult.fileName}`)
-        await this.delay(3000)
+        
+        console.log(`✅ 分块上传成功!`)
+        console.log(`   文件名: ${uploadResult.fileName}`)
+        console.log(`   文件大小: ${(uploadResult.fileSize / 1024 / 1024).toFixed(2)} MB`)
+        console.log(`   分块数量: ${uploadResult.chunks}`)
+        console.log(`   执行时间: ${uploadResult.executionTime}ms`)
+        
+        // 等待视频处理
+        if (this.features.needWaitProcessing) {
+            await this.waitForVideoProcessing()
+        }
+        
         return uploadResult
+    }
+
+    // 🔧 带超时和详细错误处理的脚本执行
+    async executeScriptWithTimeout(script, timeout = 180000) {
+        console.log(`⏱️ 执行脚本，超时时间: ${timeout/1000}秒`)
+        
+        return new Promise(async (resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new Error(`脚本执行超时 (${timeout/1000}s)`))
+            }, timeout)
+            
+            try {
+                const result = await this.executeScript(script)
+                clearTimeout(timeoutId)
+                
+                // 🔧 检查结果类型
+                console.log('📊 脚本执行结果类型:', typeof result.result.value)
+                
+                if (result.result.value && typeof result.result.value === 'object') {
+                    if (result.result.value.success === false) {
+                        console.error('❌ 脚本执行失败:', result.result.value.error)
+                    } else {
+                        console.log('✅ 脚本执行成功')
+                    }
+                }
+                
+                resolve(result)
+            } catch (error) {
+                clearTimeout(timeoutId)
+                console.error('❌ 脚本执行异常:', error.message)
+                reject(error)
+            }
+        })
     }
     /**
      * 填写短标题字段

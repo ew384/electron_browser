@@ -18,6 +18,19 @@ export class XiaohongshuVideoPublisher {
         console.log('📤 上传视频到小红书...')
 
         try {
+            const fileStats = fs.statSync(filePath)
+            const fileSizeMB = fileStats.size / (1024 * 1024)
+            console.log(`📁 文件大小: ${fileSizeMB.toFixed(2)} MB`)
+
+            // 🔧 根据文件大小预估上传时间并给出提示
+            let estimatedTime = '1-2分钟'
+            if (fileSizeMB > 50) {
+                estimatedTime = '4-6分钟'
+            } else if (fileSizeMB > 20) {
+                estimatedTime = '2-4分钟'
+            }
+            
+            console.log(`⏱️ 预计上传时间: ${estimatedTime}，请耐心等待...`)
             const result = await this.uploadFileToXiaohongshu(filePath)
 
             // 🔧 新增：等待视频处理完成
@@ -29,7 +42,16 @@ export class XiaohongshuVideoPublisher {
             // 🔧 新增：等待视频上传和处理完成
             console.log('⏳ 等待视频上传和处理完成...')
             await this.waitForVideoProcessing()
-
+            if (fileSizeMB > 50) {
+                console.log('📊 大文件上传，等待6分钟确保处理完成...')
+                await this.delay(360000) // 6分钟
+            } else if (fileSizeMB > 20) {
+                console.log('📊 中等文件上传，等待3分钟确保处理完成...')
+                await this.delay(180000) // 3分钟
+            } else {
+                console.log('📊 小文件上传，等待1分钟确保处理完成...')
+                await this.delay(60000) // 1分钟
+            }
             return result
         } catch (error) {
             throw new Error(`小红书文件上传失败: ${error.message}`)

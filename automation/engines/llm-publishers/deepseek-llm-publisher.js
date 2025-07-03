@@ -272,8 +272,9 @@ export class DeepSeekLLMPublisher {
             }
 
             if (prompt) {
-                // 保存prompt用于后续提取
+                // 🔒 安全保存完整的用户输入，用于后续精准提取
                 this.session.lastPrompt = prompt;
+                this.session.currentUserInput = prompt; // 新增：专门用于内容提取的字段
                 
                 const sendResult = await this.sendPromptMessage(prompt);
                 if (!sendResult.success) {
@@ -285,7 +286,8 @@ export class DeepSeekLLMPublisher {
                     throw new Error(responseResult.error);
                 }
 
-                const extractedContent = await this.extractPageContent();
+                // 🎯 传递用户输入到内容提取方法
+                const extractedContent = await this.extractPageContent(prompt);
 
                 return {
                     success: true,
@@ -311,7 +313,6 @@ export class DeepSeekLLMPublisher {
             };
         }
     }
-
     async sendPromptMessage(prompt) {
         try {
             console.log('[DeepSeek] 发送提示消息...');
@@ -608,378 +609,317 @@ export class DeepSeekLLMPublisher {
             };
         }
     }
-
-    async extractPageContent() {
+    async extractPageContent(userInputText = null) {
         try {
-            console.log('[DeepSeek] 开始智能内容提取...');
+            console.log('[DeepSeek] ==================== 开始增强清理内容提取 ====================');
+
+            const userInput = userInputText || this.session.lastPrompt || '';
+            console.log('[DeepSeek] 用户输入长度:', userInput.length);
 
             const extractScript = `
                 (function() {
+                    console.log('脚本开始执行');
+                    
+                    const userInput = arguments[0] || '';
+                    console.log('用户输入长度:', userInput.length);
+                    
                     try {
-                        const questionText = ${JSON.stringify(this.session.lastPrompt || '问题')};
+                        console.log('获取页面信息');
+                        const pageInfo = {
+                            url: window.location.href,
+                            totalElements: document.querySelectorAll('*').length,
+                            bodyTextLength: document.body.textContent.length
+                        };
+                        console.log('页面元素总数:', pageInfo.totalElements);
                         
-                        console.log('=== 开始DeepSeek智能内容提取 ===');
+                        console.log('查找对话容器');
+                        const allElements = document.querySelectorAll('*');
+                        let bestContainer = null;
+                        let maxScore = 0;
                         
-                        // 🔧 策略1：基于时间顺序的DOM查找（最可靠）
-                        function findLatestContent() {
-                            // 查找所有可能包含对话的容器
-                            const containers = [
-                                // 通用对话容器模式
-                                '[role="main"]',
-                                '[class*="chat"]',
-                                '[class*="conversation"]',
-                                '[class*="message"]',
-                                '[class*="dialog"]',
-                                '[class*="response"]',
-                                
-                                // 主要内容区域
-                                'main',
-                                '#main',
-                                '.main',
-                                '#content',
-                                '.content'
+                        for (let i = 0; i < allElements.length; i++) {
+                            const element = allElements[i];
+                            const text = element.textContent;
+                            if (!text || text.length < 200) continue;
+                            
+                            let score = 0;
+                            
+                            if (userInput && text.indexOf(userInput) !== -1) score += 10;
+                            if (text.indexOf('需求类型') !== -1 || text.indexOf('{') !== -1) score += 8;
+                            if (text.length > 500 && text.length < 5000) score += 5;
+                            if (text.indexOf('sidebar') === -1 && text.indexOf('header') === -1) score += 2;
+                            
+                            if (score > maxScore) {
+                                maxScore = score;
+                                bestContainer = element;
+                            }
+                        }
+                        
+                        if (!bestContainer) {
+                            console.log('未找到合适的对话容器');
+                            return {
+                                success: false,
+                                error: '未找到对话容器'
+                            };
+                        }
+                        
+                        console.log('找到最佳容器，得分:', maxScore);
+                        
+                        let rawContent = bestContainer.textContent;
+                        console.log('原始内容长度:', rawContent.length);
+                        
+                        // 处理HTML格式和HTML实体
+                        if (bestContainer.innerHTML) {
+                            console.log('检测到HTML格式，进行预处理');
+                            let htmlContent = bestContainer.innerHTML;
+                            
+                            // 处理HTML实体
+                            htmlContent = htmlContent.replace(/&nbsp;/g, ' ');
+                            htmlContent = htmlContent.replace(/&amp;/g, '&');
+                            htmlContent = htmlContent.replace(/&lt;/g, '<');
+                            htmlContent = htmlContent.replace(/&gt;/g, '>');
+                            htmlContent = htmlContent.replace(/&quot;/g, '"');
+                            htmlContent = htmlContent.replace(/&#39;/g, "'");
+                            
+                            // 处理HTML标签
+                            rawContent = htmlContent
+                                .replace(/<br\\s*\\/?>/gi, '\\n')
+                                .replace(/<[^>]*>/g, '')
+                                .replace(/^\\s+|\\s+$/g, '');
+                            console.log('HTML预处理后长度:', rawContent.length);
+                        }
+                        
+                        console.log('开始增强智能清理');
+                        let cleaned = rawContent;
+                        console.log('清理前长度:', cleaned.length);
+                        
+                        // 🎯 问题修复1: 移除HTML实体残留
+                        console.log('清理HTML实体残留');
+                        cleaned = cleaned.replace(/&nbsp;/g, ' ');
+                        cleaned = cleaned.replace(/&amp;/g, '&');
+                        cleaned = cleaned.replace(/&lt;/g, '<');
+                        cleaned = cleaned.replace(/&gt;/g, '>');
+                        cleaned = cleaned.replace(/&quot;/g, '"');
+                        cleaned = cleaned.replace(/&#39;/g, "'");
+                        
+                        // 🎯 问题修复2: 移除整个agent prompt模板
+                        if (userInput) {
+                            console.log('移除agent prompt模板重复');
+                            
+                            // 查找完整的agent prompt结束位置
+                            const agentPromptEndMarkers = [
+                                '请确保保留所有之前已经收集到的信息，并与新信息合并。',
+                                '"分析说明": "你的分析思路"',
+                                '}\\s*请确保保留所有',
+                                '请用这样的格式来组织你的分析:'
                             ];
                             
-                            for (const selector of containers) {
-                                const container = document.querySelector(selector);
-                                if (container) {
-                                    const text = container.textContent;
-                                    if (text && text.includes(questionText) && text.length > questionText.length + 100) {
-                                        console.log('找到对话容器:', selector);
-                                        return { element: container, method: 'conversation_container', selector };
+                            let agentPromptEnd = -1;
+                            for (let j = 0; j < agentPromptEndMarkers.length; j++) {
+                                const marker = agentPromptEndMarkers[j];
+                                const index = cleaned.indexOf(marker);
+                                if (index !== -1) {
+                                    agentPromptEnd = Math.max(agentPromptEnd, index + marker.length);
+                                    console.log('找到agent prompt结束标记:', marker, '位置:', index);
+                                }
+                            }
+                            
+                            // 如果找到了agent prompt的结束位置，从那里开始提取AI回复
+                            if (agentPromptEnd !== -1) {
+                                console.log('从agent prompt结束位置开始提取，位置:', agentPromptEnd);
+                                cleaned = cleaned.substring(agentPromptEnd);
+                                console.log('移除agent prompt后长度:', cleaned.length);
+                            } else {
+                                // 备用方案：基于用户原始输入查找
+                                const originalUserQuery = userInput.split('\\n')[2]; // 提取"用户说: xxx"部分
+                                if (originalUserQuery) {
+                                    const userQueryMatch = originalUserQuery.match(/"([^"]+)"/);
+                                    if (userQueryMatch && userQueryMatch[1]) {
+                                        const actualUserQuery = userQueryMatch[1];
+                                        console.log('提取到实际用户查询:', actualUserQuery);
+                                        
+                                        // 查找这个查询之后的AI回复
+                                        const queryIndex = cleaned.lastIndexOf(actualUserQuery);
+                                        if (queryIndex !== -1) {
+                                            cleaned = cleaned.substring(queryIndex + actualUserQuery.length);
+                                            console.log('基于实际用户查询提取后长度:', cleaned.length);
+                                        }
                                     }
                                 }
                             }
-                            
-                            return null;
                         }
                         
-                        // 🔧 策略2：基于DOM层次结构的查找
-                        function findByDOMStructure() {
-                            const allElements = document.querySelectorAll('*');
+                        // 🎯 清理页面导航垃圾（增强版）
+                        console.log('移除页面导航垃圾');
+                        cleaned = cleaned.replace(/New chat\\s*&nbsp;[^{]*Today[^{]*/gi, '');
+                        cleaned = cleaned.replace(/New chat\\s+Today[^\\n{]*Get App[^\\n{]*/gi, '');
+                        cleaned = cleaned.replace(/New chat\\s+Today[^\\n{]*/gi, '');
+                        cleaned = cleaned.replace(/Get App\\s*My Profile[^\\n{]*/gi, '');
+                        cleaned = cleaned.replace(/用户请求生成[^\\n{]*诗[^\\n{]*/gi, '');
+                        cleaned = cleaned.replace(/用户与助理初次问候交流/gi, '');
+                        
+                        // 清理更多导航元素
+                        cleaned = cleaned.replace(/^[\\s\\n]*New chat[^{]*Today[^{]*Get App[^{]*My Profile[^{]*/gi, '');
+                        cleaned = cleaned.replace(/\\s*New chat\\s*/gi, ' ');
+                        cleaned = cleaned.replace(/\\s*Today\\s*/gi, ' ');
+                        cleaned = cleaned.replace(/\\s*Get App\\s*/gi, ' ');
+                        cleaned = cleaned.replace(/\\s*My Profile\\s*/gi, ' ');
+                        
+                        // 🎯 移除结尾垃圾（增强版）
+                        console.log('移除结尾垃圾');
+                        cleaned = cleaned.replace(/New chat\\s*DeepThink \\(R1\\)\\s*Search\\s*AI-generated[^\\n]*$/gi, '');
+                        cleaned = cleaned.replace(/DeepThink \\(R1\\)\\s*Search\\s*AI-generated[^\\n]*$/gi, '');
+                        cleaned = cleaned.replace(/AI-generated,?\\s*for reference only\\s*$/gi, '');
+                        cleaned = cleaned.replace(/Search\\s*AI-generated[^\\n]*$/gi, '');
+                        cleaned = cleaned.replace(/DeepThink \\(R1\\)\\s*$/gi, '');
+                        cleaned = cleaned.replace(/Copy\\s*Download\\s*$/gi, '');
+                        
+                        // 🎯 精确JSON提取
+                        console.log('执行精确JSON提取');
+                        const jsonStart = cleaned.indexOf('{');
+                        if (jsonStart !== -1) {
+                            console.log('找到JSON开始位置:', jsonStart);
                             
-                            // 直接查找最符合条件的元素
-                            for (const el of allElements) {
-                                const text = el.textContent?.trim();
-                                if (!text || !text.includes(questionText)) continue;
+                            // 提取从{开始的内容
+                            const fromJson = cleaned.substring(jsonStart);
+                            
+                            // 查找JSON结束位置
+                            let braceCount = 0;
+                            let jsonEnd = -1;
+                            let inString = false;
+                            
+                            for (let i = 0; i < fromJson.length; i++) {
+                                const char = fromJson[i];
                                 
-                                // 检查基本条件
-                                if (text.length < 100) continue; // 内容太短
-                                if (text.length > 10000) continue; // 内容太长，可能包含整个页面
-                                
-                                // 检查是否是有意义的内容容器
-                                const isContentContainer = el.children.length === 0 || 
-                                                        Array.from(el.children).every(child => 
-                                                            ['span', 'strong', 'em', 'code', 'br', 'p', 'div'].includes(child.tagName.toLowerCase())
-                                                        );
-                                
-                                // 计算内容密度（文本 vs HTML）
-                                const contentDensity = text.length / el.innerHTML.length;
-                                
-                                // 简单条件：内容密度高且是内容容器
-                                if (contentDensity > 0.5 && isContentContainer) {
-                                    console.log('找到DOM结构匹配元素:', el.tagName, el.className);
-                                    return { 
-                                        element: el, 
-                                        method: 'dom_structure_analysis'
-                                    };
+                                if (char === '"' && (i === 0 || fromJson[i-1] !== '\\\\')) {
+                                    inString = !inString;
                                 }
-                            }
-                            
-                            return null;
-                        }
-                        
-                        // 🔧 策略3：基于内容模式的识别
-                        function findByContentPattern() {
-                            const fullText = document.body.textContent;
-                            const questionIndex = fullText.indexOf(questionText);
-                            
-                            if (questionIndex === -1) {
-                                return null;
-                            }
-                            
-                            // 智能内容分割 - 查找自然边界
-                            const beforeQuestion = fullText.substring(0, questionIndex);
-                            const afterQuestion = fullText.substring(questionIndex);
-                            
-                            // 查找结束标记
-                            const endMarkers = [
-                                '\\n\\n\\n', // 多个换行
-                                'New chat',
-                                '@keyframes',
-                                'position:',
-                                'z-index:',
-                                '.intercom',
-                                'AI-generated',
-                                '© 2024',
-                                'Terms of Service',
-                                'Privacy Policy'
-                            ];
-                            
-                            let endIndex = afterQuestion.length;
-                            for (const marker of endMarkers) {
-                                const index = afterQuestion.indexOf(marker);
-                                if (index !== -1 && index < endIndex) {
-                                    endIndex = index;
-                                }
-                            }
-                            
-                            const extractedContent = afterQuestion.substring(0, endIndex).trim();
-                            
-                            if (extractedContent.length > 50) {
-                                return {
-                                    content: extractedContent,
-                                    method: 'content_pattern_matching',
-                                    boundaries: { start: questionIndex, end: questionIndex + endIndex }
-                                };
-                            }
-                            
-                            return null;
-                        }
-                        
-                        // 辅助函数已移除，不再需要复杂的深度计算
-                        
-                        // 🚀 执行多策略提取
-                        let result = null;
-                        let extractionMethod = '';
-                        let extractedText = '';
-                        
-                        // 尝试策略1：对话容器查找
-                        result = findLatestContent();
-                        if (result) {
-                            extractedText = result.element.textContent.trim();
-                            extractionMethod = result.method;
-                            console.log('使用策略1:', result.method);
-                        }
-                        
-                        // 尝试策略2：DOM结构查找
-                        if (!result || extractedText.length < 100) {
-                            result = findByDOMStructure();
-                            if (result) {
-                                extractedText = result.element.textContent.trim();
-                                extractionMethod = result.method;
-                                console.log('使用策略2:', result.method);
-                            }
-                        }
-                        
-                        // 尝试策略3：内容模式匹配
-                        if (!result || extractedText.length < 100) {
-                            result = findByContentPattern();
-                            if (result) {
-                                extractedText = result.content;
-                                extractionMethod = result.method;
-                                console.log('使用策略3:', result.method);
-                            }
-                        }
-                        // 🔧 备用策略4：基于实际DOM结构的代码块提取（如果前面策略都失败）
-                        if (!result || extractedText.length < 100) {
-                            console.log('尝试备用策略4: DOM结构代码块提取');
-                            
-                            // 查找代码块容器
-                            const codeSelectors = [
-                                '.md-code-block',
-                                '.md-code-block-dark', 
-                                'pre',
-                                '[class*="code"]'
-                            ];
-                            
-                            let bestCodeBlock = null;
-                            let maxLength = 0;
-                            
-                            for (const selector of codeSelectors) {
-                                const elements = document.querySelectorAll(selector);
-                                for (const el of elements) {
-                                    const text = el.textContent?.trim();
-                                    if (text && text.length > maxLength) {
-                                        maxLength = text.length;
-                                        bestCodeBlock = text;
-                                    }
-                                }
-                            }
-                            
-                            if (bestCodeBlock && bestCodeBlock.length > 50) {
-                                extractedText = bestCodeBlock;
-                                extractionMethod = 'dom_code_block_extraction';
-                                console.log('备用策略4成功:', extractionMethod, '长度:', extractedText.length);
-                            }
-                        }
-                        // 🔧 备用策略5：查找markdown段落内容（处理<br>标签格式）
-                        if (!result || extractedText.length < 100) {
-                            console.log('尝试备用策略5: Markdown段落提取');
-                            
-                            // 查找markdown段落元素
-                            const markdownSelectors = [
-                                '.ds-markdown-paragraph',
-                                '[class*="markdown"]',
-                                'p[class*="ds-"]'
-                            ];
-                            
-                            let bestMarkdownContent = null;
-                            let maxLength = 0;
-                            
-                            for (const selector of markdownSelectors) {
-                                const elements = document.querySelectorAll(selector);
-                                for (const el of elements) {
-                                    const html = el.innerHTML;
-                                    const text = el.textContent?.trim();
-                                    
-                                    // 检查是否包含JSON特征或有意义的内容
-                                    if (text && text.length > 50 && 
-                                        (text.includes('"') || text.includes('{') || text.includes('需求类型'))) {
-                                        
-                                        // 处理<br>标签，转换为真正的换行符
-                                        const processedText = html
-                                            .replace(/<br\\s*\\/?>/gi, '\\n')  // 将<br>替换为换行符
-                                            .replace(/<[^>]*>/g, '')          // 移除其他HTML标签
-                                            .trim();
-                                        
-                                        if (processedText.length > maxLength) {
-                                            maxLength = processedText.length;
-                                            bestMarkdownContent = processedText;
+                                
+                                if (!inString) {
+                                    if (char === '{') {
+                                        braceCount++;
+                                    } else if (char === '}') {
+                                        braceCount--;
+                                        if (braceCount === 0) {
+                                            jsonEnd = i + 1;
+                                            break;
                                         }
                                     }
                                 }
                             }
                             
-                            if (bestMarkdownContent && bestMarkdownContent.length > 50) {
-                                extractedText = bestMarkdownContent;
-                                extractionMethod = 'markdown_paragraph_extraction';
-                                console.log('备用策略5成功:', extractionMethod, '长度:', extractedText.length);
+                            if (jsonEnd !== -1) {
+                                const extractedJson = fromJson.substring(0, jsonEnd);
+                                console.log('成功提取完整JSON，长度:', extractedJson.length);
+                                cleaned = extractedJson;
+                            } else {
+                                console.log('未找到JSON结束，使用现有清理结果');
                             }
-                        }                        
-                        if (!extractedText || extractedText.length < 50) {
-                            console.error('所有提取策略都失败');
-                            return {
-                                success: false,
-                                error: '无法提取有效内容',
-                                conversationTurns: []
-                            };
-                        }
-                        
-                        // 🔧 智能内容清理
-                        let cleanedContent = extractedText;
-                        // 检查是否是JSON格式内容，如果是则进行轻度清理
-                        const isJsonContent = extractedText.includes('"需求类型"') || 
-                                            extractedText.includes('"下一步操作"') ||
-                                            (extractedText.trim().startsWith('{') && extractedContent.trim().endsWith('}'));
-
-                        if (isJsonContent) {
-                            console.log('检测到JSON格式内容，使用轻度清理');
-                            // 只做基本清理
-                            cleanedContent = extractedText
-                                .replace(/Copy\\s*Download/gi, '')
-                                .replace(/Copy/g, '')
-                                .replace(/Download/g, '')
-                                .trim();
                         } else {
-                            // 移除问题文本本身（如果在开头）
-                            if (cleanedContent.startsWith(questionText)) {
-                                cleanedContent = cleanedContent.substring(questionText.length).trim();
-                            }
-                            
-                            // 深度清理模式
-                            const deepCleanPatterns = [
-                                // UI按钮和操作
-                                /[a-z]+CopyDownload/gi,
-                                /Copy\\s*Download/gi,
-                                /\\s+Copy\\s+/g,
-                                /\\s+Download\\s+/g,
-                                
-                                // DeepSeek特有元素
-                                /New chat DeepThink \\(R1\\)Search/g,
-                                /DeepThink \\(R1\\)/g,
-                                /AI-generated[^\\n]*/gi,
-                                
-                                // CSS和样式（完整清理）
-                                /@[a-z-]+\\s*\\{[^}]*\\}/gi,
-                                /\\.[a-z-]+[^{]*\\{[^}]*\\}/gi,
-                                /[a-z-]+:\\s*[^;]*;/gi,
-                                /rgba?\\([^)]*\\)/gi,
-                                /[0-9]+px/gi,
-                                
-                                // 其他UI垃圾
-                                /intercom[^\\s]*/gi,
-                                /Search(?!\\w)/g,
-                                /\\s{3,}/g
-                            ];
-                            
-                            deepCleanPatterns.forEach(pattern => {
-                                cleanedContent = cleanedContent.replace(pattern, ' ');
-                            });
-                            
-                            // 最终格式化
-                            cleanedContent = cleanedContent
-                                .replace(/\\s+/g, ' ')
-                                .replace(/\\n{3,}/g, '\\n\\n')
-                                .trim();
+                            console.log('未找到JSON开始位置');
                         }
-                        // 简单的内容有效性检查
-                        if (cleanedContent.length < 20) {
-                            console.error('清理后内容过短');
+                        
+                        // 最终清理
+                        cleaned = cleaned.replace(/\\s+/g, ' ');
+                        cleaned = cleaned.replace(/\\n{3,}/g, '\\n\\n');
+                        cleaned = cleaned.replace(/^\\s+|\\s+$/g, '');
+                        
+                        console.log('最终清理后长度:', cleaned.length);
+                        
+                        if (!cleaned || cleaned.length < 10) {
+                            console.log('清理后内容过短或为空');
                             return {
                                 success: false,
-                                error: '提取的内容过短',
-                                conversationTurns: []
+                                error: '清理后内容无效'
                             };
                         }
                         
-                        console.log('提取完成:', {
-                            method: extractionMethod,
-                            originalLength: extractedText.length,
-                            cleanedLength: cleanedContent.length
-                        });
+                        console.log('内容提取和清理完成');
+                        console.log('最终内容预览:', cleaned.substring(0, 200));
                         
                         return {
-                            conversationTurns: [{
-                                turnIndex: 0,
-                                query: questionText,
-                                response: cleanedContent
-                            }],
-                            usage: {
-                                prompt_tokens: Math.round(questionText.length / 4),
-                                completion_tokens: Math.round(cleanedContent.length / 4),
-                                total_tokens: Math.round((questionText.length + cleanedContent.length) / 4)
-                            },
-                            extractionInfo: {
-                                method: extractionMethod,
-                                originalLength: extractedText.length,
-                                cleanedLength: cleanedContent.length
-                            }
+                            success: true,
+                            method: 'enhanced_cleaned_extraction',
+                            content: cleaned,
+                            originalLength: rawContent.length,
+                            cleanedLength: cleaned.length
                         };
                         
-                    } catch (error) {
-                        console.error('内容提取失败:', error);
+                    } catch (innerError) {
+                        console.error('脚本内部错误:', innerError);
                         return {
-                            error: error.message,
-                            conversationTurns: []
+                            success: false,
+                            error: 'Script execution error: ' + innerError.message,
+                            stack: innerError.stack
                         };
                     }
                 })()
             `;
 
+            console.log('[DeepSeek] 执行增强清理脚本');
+
             const result = await this.llmController.executeLLMScript(this.session, extractScript, {
-                awaitPromise: true,
-                timeout: 30000
+                awaitPromise: false,
+                timeout: 30000,
+                args: [userInput]
             });
 
-            if (result.success && result.result) {
-                const extractedContent = result.result?.value || result.result;
-                
-                if (extractedContent.error) {
-                    throw new Error(extractedContent.error);
-                }
+            console.log('[DeepSeek] 脚本执行结果:', result.success);
 
-                console.log('[DeepSeek] ✅ 智能内容提取完成');
-                console.log(`[DeepSeek] 提取信息:`, extractedContent.extractionInfo);
-
-                const formattedContent = await this.formatToNativeAPIStyle(extractedContent);
-                return formattedContent;
-            } else {
-                throw new Error('脚本执行失败: ' + (result.error || '未知错误'));
+            if (!result.success) {
+                throw new Error('脚本执行失败: ' + result.error);
             }
 
+            let extractedContent = null;
+            if (result.result && result.result.value !== undefined) {
+                extractedContent = result.result.value;
+            } else if (result.result) {
+                extractedContent = result.result;
+            }
+
+            if (!extractedContent || !extractedContent.success) {
+                throw new Error(extractedContent?.error || '内容提取失败');
+            }
+
+            console.log('[DeepSeek] 增强清理提取成功');
+            console.log('[DeepSeek] 原始长度:', extractedContent.originalLength);
+            console.log('[DeepSeek] 清理后长度:', extractedContent.cleanedLength);
+            console.log('[DeepSeek] 清理内容预览:', extractedContent.content.substring(0, 100));
+
+            const conversationTurns = [{
+                turnIndex: 0,
+                query: userInput || '用户输入',
+                response: extractedContent.content
+            }];
+
+            const usage = {
+                prompt_tokens: Math.round((userInput?.length || 0) / 4),
+                completion_tokens: Math.round(extractedContent.content.length / 4),
+                total_tokens: Math.round(((userInput?.length || 0) + extractedContent.content.length) / 4)
+            };
+
+            const extractionInfo = {
+                method: extractedContent.method,
+                originalLength: extractedContent.originalLength,
+                cleanedLength: extractedContent.cleanedLength,
+                userInputProvided: !!userInput,
+                cleaningRatio: Math.round((1 - extractedContent.cleanedLength / extractedContent.originalLength) * 100)
+            };
+
+            const formattedContent = await this.formatToNativeAPIStyle({
+                conversationTurns,
+                usage,
+                extractionInfo
+            });
+            
+            console.log('[DeepSeek] 最终结果构建完成');
+            console.log('[DeepSeek] 清理比例:', extractionInfo.cleaningRatio, '%');
+            
+            return formattedContent;
+
         } catch (error) {
-            console.error('[DeepSeek] 智能内容提取失败:', error.message);
+            console.error('[DeepSeek] 增强清理提取失败:', error.message);
+            
             return {
                 error: error.message,
                 id: "chatcmpl-" + Date.now(),
