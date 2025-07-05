@@ -5,10 +5,13 @@ dist/
 .env.local
 .env.*.local
 npm-debug.log*
+yarn.lock
 yarn-debug.log*
 yarn-error.log*
-electron/dist/
+dist/electron/
 server/dist/
+electron/node_modules/
+dist/
 automation/output/
 automation/test/output/
 llm_fastAPI/__pycache__/
